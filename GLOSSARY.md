@@ -8,6 +8,10 @@ Cadence sells video courses to learners. This glossary fixes the words we use fo
 A learner's payment for one course, at the price they were charged.
 _Avoid_: Order, transaction
 
+**Individual Purchase**:
+A Purchase a learner bought for themselves, as opposed to a team licence.
+_Avoid_: Personal purchase, single-seat purchase
+
 **Refunded Purchase**:
 A Purchase whose money has been given back by a Refund; it no longer gives the learner access to the course.
 _Avoid_: Cancelled purchase, reversed purchase
