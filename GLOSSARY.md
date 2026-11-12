@@ -9,7 +9,7 @@ A learner's payment for one course, at the price they were charged.
 _Avoid_: Order, transaction
 
 **Refunded Purchase**:
-A Purchase whose money has been given back by a Refund; the learner no longer has access to the course.
+A Purchase whose money has been given back by a Refund; it no longer gives the learner access to the course.
 _Avoid_: Cancelled purchase, reversed purchase
 
 **Refund**:
@@ -47,5 +47,13 @@ _Avoid_: Using it for anything a learner asks Cadence for directly
 ## People
 
 **Support**:
-A Cadence staff member who Approves or Declines Refund Requests.
-_Avoid_: Admin (that is a team-licence role), reviewer, ops
+The job of deciding Refund Requests (Approving or Declining them), done by Platform Admins. Support is a job, not a separate kind of account.
+_Avoid_: Reviewer, ops, team Admin
+
+**Platform Admin**:
+A Cadence staff account with authority over the whole platform. Platform Admins do the job of Support.
+_Avoid_: Admin on its own (ambiguous with the team Admin), superuser
+
+**Team Admin**:
+The person who manages a team and its team-licence seats. A Team Admin has no say over Refund Requests.
+_Avoid_: Admin on its own, Support
