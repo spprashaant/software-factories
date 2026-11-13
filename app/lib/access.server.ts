@@ -24,6 +24,9 @@ function getUserById(id: number) {
 
 export type Access = CourseAccess & { userId: number | null };
 
+/** Access for someone who is signed in. */
+export type SignedInAccess = CourseAccess & { userId: number };
+
 const SIGNED_OUT: Access = {
   userId: null,
   user: undefined,
@@ -74,7 +77,7 @@ export async function requireUserId(request: Request): Promise<number> {
 export async function requireContentAccess(
   request: Request,
   courseId: number
-): Promise<Access> {
+): Promise<SignedInAccess> {
   const access = await getAccess(request, courseId);
 
   if (!access.userId) {
@@ -85,7 +88,7 @@ export async function requireContentAccess(
     throw data("You must be enrolled in this course.", { status: 403 });
   }
 
-  return access;
+  return { ...access, userId: access.userId };
 }
 
 /**
@@ -94,7 +97,7 @@ export async function requireContentAccess(
 export async function requireStaff(
   request: Request,
   courseId: number
-): Promise<Access> {
+): Promise<SignedInAccess> {
   const access = await getAccess(request, courseId);
 
   if (!access.userId) {
@@ -105,7 +108,7 @@ export async function requireStaff(
     throw data("Only this course's instructor can do that.", { status: 403 });
   }
 
-  return access;
+  return { ...access, userId: access.userId };
 }
 
 /**

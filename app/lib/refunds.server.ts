@@ -18,6 +18,7 @@ import {
 } from "~/db/schema";
 import { formatPrice } from "~/lib/utils";
 import type { Notification } from "~/lib/notifications.server";
+import { findPerson } from "~/lib/people.server";
 import {
   REFUND_COMPLETION_LIMIT,
   REFUND_WATCH_LIMIT_SECONDS,
@@ -836,14 +837,9 @@ function refundDecidedNotifications(
 ): Notification[] {
   if (purchase.userId === platformAdminId) return [];
 
-  const person = (id: number) => {
-    const user = db
-      .select({ id: users.id, name: users.name })
-      .from(users)
-      .where(eq(users.id, id))
-      .get();
-    return user ?? { id, name: "" };
-  };
+  const buyer = findPerson(db, purchase.userId);
+  const platformAdmin = findPerson(db, platformAdminId);
+  if (!buyer || !platformAdmin) return [];
   const course = db
     .select({ title: courses.title })
     .from(courses)
@@ -856,8 +852,8 @@ function refundDecidedNotifications(
         decision === RefundStatus.Approved
           ? "refund-approved"
           : "refund-declined",
-      recipients: [person(purchase.userId)],
-      actor: person(platformAdminId),
+      recipients: [buyer],
+      actor: platformAdmin,
       data: {
         refundRequestId,
         courseId: purchase.courseId,

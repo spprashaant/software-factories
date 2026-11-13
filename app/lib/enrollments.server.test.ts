@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createTestDb, seedBaseData } from "~/test/setup";
+import { createTestDb, refusalOf, seedBaseData } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { RefundStatus, UserRole } from "~/db/schema";
 import { claimSeat, makeIndividualPurchase } from "./enrollments.server";
@@ -62,7 +62,6 @@ describe("claimSeat", () => {
     const result = claimSeat(db, seats[0].code, base.user.id, "GB");
 
     expect(result).toMatchObject({
-      ok: true,
       enrollment: { userId: base.user.id, courseId: base.course.id },
     });
   });
@@ -72,7 +71,6 @@ describe("claimSeat", () => {
 
     const result = claimSeat(db, seats[0].code, base.user.id, "GB");
 
-    if (!result.ok) throw new Error(result.error);
     expect(result.notifications).toEqual([
       {
         kind: "seat-claimed",
@@ -106,7 +104,6 @@ describe("claimSeat", () => {
 
     const result = claimSeat(db, seats[0].code, teamAdmin.id, "GB");
 
-    if (!result.ok) throw new Error(result.error);
     expect(result.notifications.map((n) => n.kind)).toEqual(["enrollment"]);
   });
 
@@ -121,11 +118,13 @@ describe("claimSeat", () => {
       })
       .run();
 
-    const result = claimSeat(db, seats[0].code, base.user.id, "GB");
+    const result = refusalOf(() =>
+      claimSeat(db, seats[0].code, base.user.id, "GB")
+    );
 
     expect(result).toEqual({
-      ok: false,
-      error:
+      status: 409,
+      message:
         "This seat can't be claimed right now. Ask the person who shared it with you.",
     });
   });
@@ -136,11 +135,13 @@ describe("claimSeat", () => {
       .set({ refundedAt: new Date().toISOString() })
       .run();
 
-    const result = claimSeat(db, seats[0].code, base.user.id, "GB");
+    const result = refusalOf(() =>
+      claimSeat(db, seats[0].code, base.user.id, "GB")
+    );
 
     expect(result).toEqual({
-      ok: false,
-      error:
+      status: 409,
+      message:
         "This seat is no longer available. Ask the person who shared it with you.",
     });
   });
@@ -149,11 +150,13 @@ describe("claimSeat", () => {
     const { seats } = buyTeamLicence();
     claimSeat(db, seats[0].code, teamAdmin.id, "GB");
 
-    const result = claimSeat(db, seats[0].code, base.user.id, "GB");
+    const result = refusalOf(() =>
+      claimSeat(db, seats[0].code, base.user.id, "GB")
+    );
 
     expect(result).toEqual({
-      ok: false,
-      error: "Coupon has already been redeemed",
+      status: 409,
+      message: "Coupon has already been redeemed",
     });
   });
 
@@ -161,30 +164,34 @@ describe("claimSeat", () => {
     const { seats } = buyTeamLicence();
     claimSeat(db, seats[0].code, base.user.id, "GB");
 
-    const result = claimSeat(db, seats[1].code, base.user.id, "GB");
+    const result = refusalOf(() =>
+      claimSeat(db, seats[1].code, base.user.id, "GB")
+    );
 
     expect(result).toEqual({
-      ok: false,
-      error: "You are already enrolled in this course",
+      status: 409,
+      message: "You are already enrolled in this course",
     });
   });
 
   it("refuses a claim from a different country to the buyer's", () => {
     const { seats } = buyTeamLicence(1, "GB");
 
-    const result = claimSeat(db, seats[0].code, base.user.id, "IN");
+    const result = refusalOf(() =>
+      claimSeat(db, seats[0].code, base.user.id, "IN")
+    );
 
     expect(result).toEqual({
-      ok: false,
-      error:
+      status: 403,
+      message:
         "This coupon can only be redeemed from the same country as the purchaser",
     });
   });
 
   it("refuses a code that matches no Seat", () => {
-    const result = claimSeat(db, "NOPE", base.user.id, "GB");
+    const result = refusalOf(() => claimSeat(db, "NOPE", base.user.id, "GB"));
 
-    expect(result).toEqual({ ok: false, error: "Coupon not found" });
+    expect(result).toEqual({ status: 404, message: "Coupon not found" });
   });
 });
 
@@ -199,7 +206,6 @@ describe("makeIndividualPurchase", () => {
     );
 
     expect(result).toMatchObject({
-      ok: true,
       purchase: {
         userId: base.user.id,
         courseId: base.course.id,
@@ -219,7 +225,6 @@ describe("makeIndividualPurchase", () => {
       "IN"
     );
 
-    if (!result.ok) throw new Error(result.error);
     expect(result.notifications).toEqual([
       {
         kind: "enrollment",
@@ -245,7 +250,6 @@ describe("makeIndividualPurchase", () => {
       "IN"
     );
 
-    if (!result.ok) throw new Error(result.error);
     expect(result.notifications).toEqual([]);
   });
 
@@ -253,17 +257,13 @@ describe("makeIndividualPurchase", () => {
     const { seats } = buyTeamLicence();
     claimSeat(db, seats[0].code, base.user.id, "GB");
 
-    const result = makeIndividualPurchase(
-      db,
-      base.user.id,
-      base.course.id,
-      7900,
-      "GB"
+    const result = refusalOf(() =>
+      makeIndividualPurchase(db, base.user.id, base.course.id, 7900, "GB")
     );
 
     expect(result).toEqual({
-      ok: false,
-      error: "You are already enrolled in this course",
+      status: 409,
+      message: "You are already enrolled in this course",
     });
   });
 });

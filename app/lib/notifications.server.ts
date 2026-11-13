@@ -40,6 +40,11 @@ export type Notification = {
   arrivesRead: boolean;
 };
 
+/** A service's result, plus the Notifications its action should send. */
+export type WithNotifications<Result> = Result & {
+  notifications: Notification[];
+};
+
 // ─── Transports ───
 
 /**

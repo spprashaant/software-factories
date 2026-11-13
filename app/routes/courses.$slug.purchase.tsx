@@ -331,6 +331,10 @@ export async function action({ params, request }: Route.ActionArgs) {
     : course.price;
 
   if (parsed.data.intent === "confirm-purchase") {
+    // Already enrolled (a double submit, or a Claimed Seat): back to the course.
+    if (isUserEnrolled(currentUserId, course.id)) {
+      throw redirect(`/courses/${slug}`);
+    }
     const bought = makeIndividualPurchase(
       db,
       currentUserId,
@@ -338,9 +342,6 @@ export async function action({ params, request }: Route.ActionArgs) {
       pppPrice,
       country
     );
-    if (!bought.ok) {
-      throw redirect(`/courses/${slug}`);
-    }
     await notify(bought.notifications);
     throw redirect(`/courses/${slug}/welcome`);
   }

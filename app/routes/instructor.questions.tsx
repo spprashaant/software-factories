@@ -12,7 +12,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { UserAvatar } from "~/components/user-avatar";
 import { AlertTriangle, CheckCircle2, ExternalLink } from "lucide-react";
 import { cn, daysSince, formatRelativeTime } from "~/lib/utils";
-import { MAX_COMMENT_LENGTH } from "~/lib/comments";
+import { commentBodySchema, MAX_COMMENT_LENGTH } from "~/lib/comments";
 import { replyToDiscussionQuestion } from "~/lib/discussions.server";
 import { notify } from "~/lib/notifications.server";
 import { parseFormData } from "~/lib/validation";
@@ -123,7 +123,7 @@ const STALE_AFTER_DAYS = 3;
 const replySchema = z.object({
   intent: z.literal("reply"),
   commentId: z.coerce.number().int(),
-  body: z.string(),
+  body: commentBodySchema("Enter a reply before posting."),
 });
 
 export function meta() {
@@ -151,7 +151,10 @@ export async function action({ request }: Route.ActionArgs) {
   const parsed = parseFormData(formData, replySchema);
 
   if (!parsed.success) {
-    return { ok: false, error: "Enter a reply before posting." };
+    return {
+      ok: false,
+      error: parsed.errors.body ?? "Enter a reply before posting.",
+    };
   }
 
   const question = getCommentById(parsed.data.commentId);
@@ -168,16 +171,14 @@ export async function action({ request }: Route.ActionArgs) {
   // instructor, or an admin.
   const access = await requireStaff(request, course.courseId);
 
+  // Anything else that stops the reply is thrown by the service.
   const posted = replyToDiscussionQuestion(
     db,
-    access.userId!,
+    access.userId,
     question.lessonId,
     question.id,
     parsed.data.body
   );
-  if (!posted.ok) {
-    return { ok: false, error: posted.error };
-  }
 
   // The reply is already saved: notify() logs failures and never throws.
   await notify(posted.notifications);

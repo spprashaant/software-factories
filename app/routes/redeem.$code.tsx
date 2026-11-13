@@ -1,6 +1,4 @@
 import { Link, useFetcher, redirect } from "react-router";
-import { useEffect } from "react";
-import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/redeem.$code";
 import { getCurrentUserId } from "~/lib/session";
@@ -126,12 +124,10 @@ export async function action({ params, request }: Route.ActionArgs) {
     throw data("Invalid action.", { status: 400 });
   }
 
+  // The loader already shows why a Seat can't be claimed. If that changed
+  // since (another claim, a Refund Request), claimSeat throws the reason.
   const userCountry = await resolveCountry(request);
   const result = claimSeat(db, code, currentUserId, userCountry ?? "");
-
-  if (!result.ok) {
-    return data({ error: result.error }, { status: 400 });
-  }
 
   await notify(result.notifications);
 
@@ -143,10 +139,7 @@ export async function action({ params, request }: Route.ActionArgs) {
   throw redirect(`/courses/${course.slug}/welcome`);
 }
 
-export default function Redeem({
-  loaderData,
-  actionData,
-}: Route.ComponentProps) {
+export default function Redeem({ loaderData }: Route.ComponentProps) {
   const {
     course,
     code,
@@ -157,14 +150,6 @@ export default function Redeem({
   } = loaderData;
   const fetcher = useFetcher();
   const isSubmitting = fetcher.state !== "idle";
-
-  useEffect(() => {
-    const error =
-      fetcher.data?.error ?? (actionData as { error?: string })?.error;
-    if (error) {
-      toast.error(error);
-    }
-  }, [fetcher.data, actionData]);
 
   // Determine which state to show
   const canRedeem =
