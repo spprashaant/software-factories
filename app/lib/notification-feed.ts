@@ -101,6 +101,11 @@ function text(value: unknown, fallback: string) {
   return typeof value === "string" && value.length > 0 ? value : fallback;
 }
 
+/** Where a Purchase is managed: /team for a Team Licence, else /settings. */
+function purchaseUrl(purchaseKind: unknown) {
+  return purchaseKind === "team_licence" ? "/team" : "/settings";
+}
+
 /**
  * The row's title and where clicking it goes, worked out from the workflow
  * key and the Notification's data. Null for a kind this Cadence doesn't know.
@@ -119,6 +124,53 @@ export function describeFeedItem(item: FeedItem): DescribedNotification | null {
           { text: course, bold: true },
         ],
         url: "/admin/refunds",
+      };
+    case "seat-claimed":
+      return {
+        title: [
+          { text: actor, bold: true },
+          { text: " claimed a Seat on ", bold: false },
+          { text: course, bold: true },
+        ],
+        url: "/team",
+      };
+    case "enrollment": {
+      const courseId = data.courseId;
+      return {
+        title: [
+          { text: actor, bold: true },
+          { text: " enrolled on ", bold: false },
+          { text: course, bold: true },
+        ],
+        url:
+          typeof courseId === "number" || typeof courseId === "string"
+            ? `/instructor/${courseId}/students`
+            : "/instructor",
+      };
+    }
+    case "refund-received":
+      return {
+        title: [
+          { text: "We've got your refund request for ", bold: false },
+          { text: course, bold: true },
+        ],
+        url: purchaseUrl(data.purchaseKind),
+      };
+    case "refund-approved":
+    case "refund-declined":
+      return {
+        title: [
+          { text: "Your refund for ", bold: false },
+          { text: course, bold: true },
+          {
+            text:
+              item.source.key === "refund-approved"
+                ? " was approved"
+                : " was declined",
+            bold: false,
+          },
+        ],
+        url: purchaseUrl(data.purchaseKind),
       };
     default:
       return null;

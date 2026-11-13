@@ -67,6 +67,49 @@ describe("claimSeat", () => {
     });
   });
 
+  it("tells the Team Admin about the Seat claim and the Instructor about the Enrollment", () => {
+    const { seats } = buyTeamLicence();
+
+    const result = claimSeat(db, seats[0].code, base.user.id, "GB");
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.notifications).toEqual([
+      {
+        kind: "seat-claimed",
+        recipients: [{ id: teamAdmin.id, name: "Tess Admin" }],
+        actor: { id: base.user.id, name: "Test User" },
+        data: {
+          seatId: seats[0].id,
+          courseId: base.course.id,
+          courseTitle: "Test Course",
+        },
+        idempotencyKey: `seat-claimed:${seats[0].id}`,
+        arrivesRead: false,
+      },
+      {
+        kind: "enrollment",
+        recipients: [{ id: base.instructor.id, name: "Test Instructor" }],
+        actor: { id: base.user.id, name: "Test User" },
+        data: {
+          enrollmentId: result.enrollment.id,
+          courseId: base.course.id,
+          courseTitle: "Test Course",
+        },
+        idempotencyKey: `enrollment:${result.enrollment.id}`,
+        arrivesRead: false,
+      },
+    ]);
+  });
+
+  it("doesn't tell a Team Admin about a Seat they claimed themselves", () => {
+    const { seats } = buyTeamLicence();
+
+    const result = claimSeat(db, seats[0].code, teamAdmin.id, "GB");
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.notifications.map((n) => n.kind)).toEqual(["enrollment"]);
+  });
+
   it("refuses a Seat on hold while its Team Licence has an Open Refund Request", () => {
     const { purchase, seats } = buyTeamLicence();
     db.insert(schema.refunds)
@@ -165,6 +208,45 @@ describe("makeIndividualPurchase", () => {
       },
       enrollment: { userId: base.user.id, courseId: base.course.id },
     });
+  });
+
+  it("tells the course's Instructor about the Enrollment", () => {
+    const result = makeIndividualPurchase(
+      db,
+      base.user.id,
+      base.course.id,
+      4900,
+      "IN"
+    );
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.notifications).toEqual([
+      {
+        kind: "enrollment",
+        recipients: [{ id: base.instructor.id, name: "Test Instructor" }],
+        actor: { id: base.user.id, name: "Test User" },
+        data: {
+          enrollmentId: result.enrollment.id,
+          courseId: base.course.id,
+          courseTitle: "Test Course",
+        },
+        idempotencyKey: `enrollment:${result.enrollment.id}`,
+        arrivesRead: false,
+      },
+    ]);
+  });
+
+  it("doesn't tell an Instructor about enrolling on their own course", () => {
+    const result = makeIndividualPurchase(
+      db,
+      base.instructor.id,
+      base.course.id,
+      4900,
+      "IN"
+    );
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.notifications).toEqual([]);
   });
 
   it("refuses a buyer who is already enrolled, e.g. through a Claimed Seat", () => {
