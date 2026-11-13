@@ -2,10 +2,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Knock, { NotFoundError } from "@knocklabs/node";
 import { knockEnv } from "~/lib/knock.server";
-import type {
-  CategoryPreferences,
-  NotificationCategory,
+import {
+  categoryPreferencesSchema,
+  notificationCategorySchema,
+  receivesCategory,
+  type CategoryPreferences,
+  type NotificationCategory,
 } from "~/lib/notification-categories";
+import { categoryOf, type NotificationKind } from "~/lib/notification-kinds";
 
 // ─── Notifications ───
 // A Notification is a plain description that services return next to their
@@ -16,20 +20,6 @@ import type {
 // (local dev) each one is written to .outbox/notifications/ as a JSON file
 // instead, mirroring `sendEmail()` in mailer.server.ts.
 
-/**
- * One row of the v1 catalogue. Each kind is also the key of the Knock
- * workflow that delivers it (see knock/workflows.ts).
- */
-export type NotificationKind =
-  | "refund-opened"
-  | "refund-approved"
-  | "refund-declined"
-  | "seat-claimed"
-  | "enrollment"
-  | "discussion-question"
-  | "discussion-reply"
-  | "refund-received";
-
 export type NotificationPerson = { id: number; name: string };
 
 /**
@@ -39,6 +29,7 @@ export type NotificationPerson = { id: number; name: string };
 export type NotificationData = Record<string, string | number>;
 
 export type Notification = {
+  /** The catalogue row, which is also the Knock workflow key. */
   kind: NotificationKind;
   recipients: NotificationPerson[];
   actor: NotificationPerson | null;
@@ -49,10 +40,22 @@ export type Notification = {
   arrivesRead: boolean;
 };
 
+/** A service's result, plus the Notifications its action should send. */
+export type WithNotifications<Result> = Result & {
+  notifications: Notification[];
+};
+
 // ─── Transports ───
 
+/**
+ * Work a transport still has to do once a Notification is sent, such as
+ * marking an arrives-read Notification read. `notify()` runs it after the
+ * send, outside the send's timeout and without holding up the action.
+ */
+export type FollowUp = () => Promise<void>;
+
 export interface NotificationTransport {
-  send(notification: Notification): Promise<void>;
+  send(notification: Notification): Promise<FollowUp | void>;
 }
 
 /**
@@ -76,9 +79,10 @@ const KNOCK_PREFERENCE_SET = "default";
  * Knock upserts recipients and actor inline from the trigger, which is the only
  * user sync: id is `String(user.id)` and only the name goes with it.
  *
- * For a Notification that arrives read, the transport then finds the messages
- * the trigger made and marks them seen and read, so the badge never counts
- * them. Knock creates messages asynchronously, so it looks a few times.
+ * For a Notification that arrives read, the send returns a follow-up that
+ * finds the messages the trigger made and marks them seen and read, so the
+ * badge never counts them. Knock creates messages asynchronously, so it looks
+ * a few times.
  */
 export function knockTransport(
   apiKey: string,
@@ -103,7 +107,7 @@ export function knockTransport(
       );
 
       if (notification.arrivesRead) {
-        await markRunSeenAndRead(knock, workflow_run_id, notification);
+        return () => markRunSeenAndRead(knock, workflow_run_id, notification);
       }
     },
 
@@ -114,11 +118,12 @@ export function knockTransport(
           KNOCK_PREFERENCE_SET
         );
         const preferences: CategoryPreferences = {};
-        for (const [category, setting] of Object.entries(
-          set.categories ?? {}
-        )) {
+        for (const [key, setting] of Object.entries(set.categories ?? {})) {
+          // Knock may hold categories this Cadence doesn't know: skip them.
+          const category = notificationCategorySchema.safeParse(key);
+          if (!category.success) continue;
           // A settings object (per-channel or conditions) still means "on".
-          preferences[category as NotificationCategory] = setting !== false;
+          preferences[category.data] = setting !== false;
         }
         return preferences;
       } catch (error) {
@@ -173,6 +178,24 @@ async function markRunSeenAndRead(
 }
 
 /**
+ * The Notification with only the recipients who receive its category, or
+ * null when nobody does. Knock does this itself for every trigger; the local
+ * transports do it here so local behaviour matches.
+ */
+async function forRecipientsWhoReceiveIt(
+  notification: Notification,
+  preferences: PreferenceStore
+): Promise<Notification | null> {
+  const category = categoryOf(notification.kind);
+  const recipients: NotificationPerson[] = [];
+  for (const recipient of notification.recipients) {
+    const chosen = await preferences.readPreferences(recipient.id);
+    if (receivesCategory(category, chosen)) recipients.push(recipient);
+  }
+  return recipients.length > 0 ? { ...notification, recipients } : null;
+}
+
+/**
  * Without a Knock key, Notifications go to `directory` and each user's
  * category preferences to `<preferencesDirectory>/<userId>.json`.
  */
@@ -185,31 +208,35 @@ export function localFileTransport(
   const preferencesFile = (userId: number) =>
     join(preferencesDirectory, `${userId}.json`);
 
-  const readPreferences = async (
-    userId: number
-  ): Promise<CategoryPreferences> => {
-    const file = preferencesFile(userId);
-    if (!existsSync(file)) return {};
-    return JSON.parse(readFileSync(file, "utf8"));
-  };
-
-  return {
-    readPreferences,
+  const store: PreferenceStore = {
+    async readPreferences(userId) {
+      const file = preferencesFile(userId);
+      if (!existsSync(file)) return {};
+      return categoryPreferencesSchema.parse(
+        JSON.parse(readFileSync(file, "utf8"))
+      );
+    },
 
     async writePreference(userId, category, enabled) {
-      const preferences = await readPreferences(userId);
+      const preferences = await store.readPreferences(userId);
       mkdirSync(preferencesDirectory, { recursive: true });
       writeFileSync(
         preferencesFile(userId),
         JSON.stringify({ ...preferences, [category]: enabled }, null, 2)
       );
     },
+  };
+
+  return {
+    ...store,
 
     async send(notification) {
+      const delivered = await forRecipientsWhoReceiveIt(notification, store);
+      if (!delivered) return;
       mkdirSync(directory, { recursive: true });
-      const key = notification.idempotencyKey.replace(/[^a-z0-9-]/gi, "-");
+      const key = delivered.idempotencyKey.replace(/[^a-z0-9-]/gi, "-");
       const file = join(directory, `${Date.now()}-${key}.json`);
-      writeFileSync(file, JSON.stringify(notification, null, 2));
+      writeFileSync(file, JSON.stringify(delivered, null, 2));
     },
   };
 }
@@ -219,8 +246,7 @@ export function recordingTransport(): NotificationTransport &
   PreferenceStore & { sent: Notification[] } {
   const sent: Notification[] = [];
   const preferences = new Map<number, CategoryPreferences>();
-  return {
-    sent,
+  const store: PreferenceStore = {
     async readPreferences(userId) {
       return { ...preferences.get(userId) };
     },
@@ -230,8 +256,13 @@ export function recordingTransport(): NotificationTransport &
         [category]: enabled,
       });
     },
+  };
+  return {
+    ...store,
+    sent,
     async send(notification) {
-      sent.push(notification);
+      const delivered = await forRecipientsWhoReceiveIt(notification, store);
+      if (delivered) sent.push(delivered);
     },
   };
 }
@@ -247,8 +278,10 @@ export function defaultTransport(): NotificationTransport & PreferenceStore {
 // ─── Sending ───
 
 const DEFAULT_TIMEOUT_MS = 3000;
+/** Long enough for Knock to create the messages a follow-up marks read. */
+const DEFAULT_FOLLOW_UP_TIMEOUT_MS = 15_000;
 
-function withTimeout(promise: Promise<void>, timeoutMs: number) {
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
@@ -259,26 +292,65 @@ function withTimeout(promise: Promise<void>, timeoutMs: number) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+function logFailure(notification: Notification, error: unknown) {
+  console.error(
+    `Notification ${notification.idempotencyKey} was not sent:`,
+    error
+  );
+}
+
+export type NotifyResult = {
+  /**
+   * Resolves once every follow-up (such as marking an arrives-read
+   * Notification read) has finished, failed or timed out. Never rejects.
+   * Actions don't wait for it.
+   */
+  settled: Promise<void>;
+};
+
 /**
  * Sends Notifications after the action's write has committed. Fail-open: a
  * Notification that errors or times out is logged and dropped, so the action
  * still succeeds. No retries.
+ *
+ * Each send gets the short `timeoutMs`. A transport's follow-up runs after
+ * it in the background with its own, longer timeout, so it is never cut off
+ * by the send's timeout and never holds up the action.
  */
 export async function notify(
   notifications: Notification[],
   transport: NotificationTransport = defaultTransport(),
-  { timeoutMs = DEFAULT_TIMEOUT_MS }: { timeoutMs?: number } = {}
-): Promise<void> {
-  await Promise.all(
+  {
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    followUpTimeoutMs = DEFAULT_FOLLOW_UP_TIMEOUT_MS,
+  }: { timeoutMs?: number; followUpTimeoutMs?: number } = {}
+): Promise<NotifyResult> {
+  const followUps = await Promise.all(
     notifications.map(async (notification) => {
       try {
-        await withTimeout(transport.send(notification), timeoutMs);
-      } catch (error) {
-        console.error(
-          `Notification ${notification.idempotencyKey} was not sent:`,
-          error
+        const followUp = await withTimeout(
+          transport.send(notification),
+          timeoutMs
         );
+        return followUp ? { notification, followUp } : null;
+      } catch (error) {
+        logFailure(notification, error);
+        return null;
       }
     })
   );
+
+  const settled = Promise.all(
+    followUps
+      .filter((pending) => pending !== null)
+      .map(async ({ notification, followUp }) => {
+        try {
+          await withTimeout(followUp(), followUpTimeoutMs);
+        } catch (error) {
+          logFailure(notification, error);
+        }
+      })
+  ).then(() => undefined);
+
+  return { settled };
 }

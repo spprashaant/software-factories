@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createTestDb, seedBaseData } from "~/test/setup";
+import { createTestDb, refusalOf, seedBaseData } from "~/test/setup";
 import * as schema from "~/db/schema";
 import {
   askDiscussionQuestion,
@@ -38,7 +38,6 @@ beforeEach(() => {
 
 function ask(lesson = lessonId) {
   const result = askDiscussionQuestion(db, base.user.id, lesson, "A question");
-  if (!result.ok) throw new Error(result.error);
   return result.comment;
 }
 
@@ -52,7 +51,6 @@ describe("askDiscussionQuestion", () => {
     );
 
     expect(result).toMatchObject({
-      ok: true,
       comment: {
         userId: base.user.id,
         lessonId,
@@ -63,22 +61,21 @@ describe("askDiscussionQuestion", () => {
   });
 
   it("refuses an empty or whitespace-only body and posts nothing", () => {
-    const result = askDiscussionQuestion(db, base.user.id, lessonId, "   ");
+    const result = refusalOf(() =>
+      askDiscussionQuestion(db, base.user.id, lessonId, "   ")
+    );
 
-    expect(result).toEqual({ ok: false, error: "Comment cannot be empty" });
+    expect(result).toEqual({ status: 400, message: "Comment cannot be empty" });
   });
 
   it("refuses a body over 5000 characters", () => {
-    const result = askDiscussionQuestion(
-      db,
-      base.user.id,
-      lessonId,
-      "a".repeat(5001)
+    const result = refusalOf(() =>
+      askDiscussionQuestion(db, base.user.id, lessonId, "a".repeat(5001))
     );
 
     expect(result).toEqual({
-      ok: false,
-      error: "Comment must be 5000 characters or fewer",
+      status: 400,
+      message: "Comment must be 5000 characters or fewer",
     });
   });
 
@@ -90,13 +87,15 @@ describe("askDiscussionQuestion", () => {
       "a".repeat(5000)
     );
 
-    expect(result.ok).toBe(true);
+    expect(result.comment.body).toHaveLength(5000);
   });
 
   it("refuses a lesson that doesn't exist", () => {
-    const result = askDiscussionQuestion(db, base.user.id, 9999, "Hello");
+    const result = refusalOf(() =>
+      askDiscussionQuestion(db, base.user.id, 9999, "Hello")
+    );
 
-    expect(result).toEqual({ ok: false, error: "Lesson not found" });
+    expect(result).toEqual({ status: 404, message: "Lesson not found" });
   });
 });
 
@@ -113,7 +112,6 @@ describe("replyToDiscussionQuestion", () => {
     );
 
     expect(result).toMatchObject({
-      ok: true,
       comment: {
         userId: base.instructor.id,
         lessonId,
@@ -126,15 +124,17 @@ describe("replyToDiscussionQuestion", () => {
   it("refuses an empty body", () => {
     const question = ask();
 
-    const result = replyToDiscussionQuestion(
-      db,
-      base.instructor.id,
-      lessonId,
-      question.id,
-      ""
+    const result = refusalOf(() =>
+      replyToDiscussionQuestion(
+        db,
+        base.instructor.id,
+        lessonId,
+        question.id,
+        ""
+      )
     );
 
-    expect(result).toEqual({ ok: false, error: "Comment cannot be empty" });
+    expect(result).toEqual({ status: 400, message: "Comment cannot be empty" });
   });
 
   it("refuses a reply to a reply, since replies are one level deep", () => {
@@ -146,49 +146,51 @@ describe("replyToDiscussionQuestion", () => {
       question.id,
       "First reply"
     );
-    if (!reply.ok) throw new Error(reply.error);
 
-    const result = replyToDiscussionQuestion(
-      db,
-      base.user.id,
-      lessonId,
-      reply.comment.id,
-      "Reply to the reply"
+    const result = refusalOf(() =>
+      replyToDiscussionQuestion(
+        db,
+        base.user.id,
+        lessonId,
+        reply.comment.id,
+        "Reply to the reply"
+      )
     );
 
     expect(result).toEqual({
-      ok: false,
-      error: "Replies can only be one level deep",
+      status: 400,
+      message: "Replies can only be one level deep",
     });
   });
 
   it("refuses a parent on another lesson", () => {
     const question = ask(otherLessonId);
 
-    const result = replyToDiscussionQuestion(
-      db,
-      base.instructor.id,
-      lessonId,
-      question.id,
-      "Wrong lesson"
+    const result = refusalOf(() =>
+      replyToDiscussionQuestion(
+        db,
+        base.instructor.id,
+        lessonId,
+        question.id,
+        "Wrong lesson"
+      )
     );
 
     expect(result).toEqual({
-      ok: false,
-      error: "Parent comment belongs to a different lesson",
+      status: 400,
+      message: "Parent comment belongs to a different lesson",
     });
   });
 
   it("refuses a parent that doesn't exist", () => {
-    const result = replyToDiscussionQuestion(
-      db,
-      base.instructor.id,
-      lessonId,
-      9999,
-      "Hello"
+    const result = refusalOf(() =>
+      replyToDiscussionQuestion(db, base.instructor.id, lessonId, 9999, "Hello")
     );
 
-    expect(result).toEqual({ ok: false, error: "Parent comment not found" });
+    expect(result).toEqual({
+      status: 404,
+      message: "Parent comment not found",
+    });
   });
 });
 
@@ -200,7 +202,6 @@ describe("Discussion Notifications", () => {
       lessonId,
       "Secret question text"
     );
-    if (!result.ok) throw new Error(result.error);
 
     expect(result.notifications).toEqual([
       {
@@ -228,7 +229,6 @@ describe("Discussion Notifications", () => {
       lessonId,
       "Note to self"
     );
-    if (!result.ok) throw new Error(result.error);
 
     expect(result.notifications).toEqual([]);
   });
@@ -252,7 +252,6 @@ describe("Discussion Notifications", () => {
       question.id,
       "Secret reply text"
     );
-    if (!result.ok) throw new Error(result.error);
 
     expect(result.notifications).toEqual([
       {
@@ -283,7 +282,6 @@ describe("Discussion Notifications", () => {
       question.id,
       "Instructor answer"
     );
-    if (!result.ok) throw new Error(result.error);
 
     expect(result.notifications).toMatchObject([
       {
@@ -304,7 +302,6 @@ describe("Discussion Notifications", () => {
       question.id,
       "Answering myself"
     );
-    if (!result.ok) throw new Error(result.error);
 
     expect(result.notifications).toEqual([]);
   });
@@ -316,7 +313,6 @@ describe("Discussion Notifications", () => {
       lessonId,
       "SECRET-QUESTION"
     );
-    if (!asked.ok) throw new Error(asked.error);
     const replied = replyToDiscussionQuestion(
       db,
       base.instructor.id,
@@ -324,7 +320,6 @@ describe("Discussion Notifications", () => {
       asked.comment.id,
       "SECRET-REPLY"
     );
-    if (!replied.ok) throw new Error(replied.error);
 
     const payloads = JSON.stringify([
       ...asked.notifications,

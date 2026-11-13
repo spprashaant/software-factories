@@ -1,11 +1,18 @@
 import { eq } from "drizzle-orm";
-import { comments, courses, lessons, modules, users } from "~/db/schema";
-import { MAX_COMMENT_LENGTH, MIN_COMMENT_LENGTH } from "~/lib/comments";
+import { data } from "react-router";
+import { comments, courses, lessons, modules } from "~/db/schema";
+import type { Db } from "~/db/types";
+import {
+  COMMENT_EMPTY,
+  COMMENT_TOO_LONG,
+  MAX_COMMENT_LENGTH,
+  MIN_COMMENT_LENGTH,
+} from "~/lib/comments";
 import type {
   Notification,
-  NotificationPerson,
+  WithNotifications,
 } from "~/lib/notifications.server";
-import type { Db } from "~/lib/refunds.server";
+import { findPerson } from "~/lib/people.server";
 
 // ─── Discussions ───
 // Posting a Discussion Question on a lesson, or a Discussion Reply to one.
@@ -13,39 +20,39 @@ import type { Db } from "~/lib/refunds.server";
 // and deleting stay in the lesson route.
 //
 // Every function takes the database first, so tests can hand in an in-memory
-// one. Uses positional parameters (project convention).
+// one. Uses positional parameters (project convention). A post that can't go
+// ahead throws a response with the reason, as route actions do.
 
 type Comment = typeof comments.$inferSelect;
 
-export type PostResult =
-  | { ok: true; comment: Comment; notifications: Notification[] }
-  | { ok: false; error: string };
+export type Posted = WithNotifications<{ comment: Comment }>;
 
-function validateBody(body: string): { ok: true; body: string } | { ok: false; error: string } {
-  const trimmed = body.trim();
-  if (trimmed.length < MIN_COMMENT_LENGTH) {
-    return { ok: false, error: "Comment cannot be empty" };
-  }
-  if (trimmed.length > MAX_COMMENT_LENGTH) {
-    return {
-      ok: false,
-      error: `Comment must be ${MAX_COMMENT_LENGTH} characters or fewer`,
-    };
-  }
-  return { ok: true, body: trimmed };
-}
-
-type LessonContext = {
+/** A lesson and its course, as they travel together into a Notification. */
+export type LessonInCourse = {
   lessonId: number;
   lessonTitle: string;
   courseId: number;
   courseSlug: string;
   courseTitle: string;
-  instructorId: number;
 };
 
-function findLesson(db: Db, lessonId: number): LessonContext | undefined {
-  return db
+/** The trimmed body, or a 400 when it is empty or too long. */
+function validBody(body: string): string {
+  const trimmed = body.trim();
+  if (trimmed.length < MIN_COMMENT_LENGTH) {
+    throw data(COMMENT_EMPTY, { status: 400 });
+  }
+  if (trimmed.length > MAX_COMMENT_LENGTH) {
+    throw data(COMMENT_TOO_LONG, { status: 400 });
+  }
+  return trimmed;
+}
+
+function findLesson(
+  db: Db,
+  lessonId: number
+): { lesson: LessonInCourse; instructorId: number } {
+  const found = db
     .select({
       lessonId: lessons.id,
       lessonTitle: lessons.title,
@@ -59,14 +66,10 @@ function findLesson(db: Db, lessonId: number): LessonContext | undefined {
     .innerJoin(courses, eq(modules.courseId, courses.id))
     .where(eq(lessons.id, lessonId))
     .get();
-}
+  if (!found) throw data("Lesson not found", { status: 404 });
 
-function findPerson(db: Db, userId: number): NotificationPerson | undefined {
-  return db
-    .select({ id: users.id, name: users.name })
-    .from(users)
-    .where(eq(users.id, userId))
-    .get();
+  const { instructorId, ...lesson } = found;
+  return { lesson, instructorId };
 }
 
 // ─── Notifications ───
@@ -78,7 +81,7 @@ function discussionNotification(
   kind: "discussion-question" | "discussion-reply",
   recipientId: number,
   authorId: number,
-  lesson: LessonContext,
+  lesson: LessonInCourse,
   comment: Comment
 ): Notification[] {
   if (recipientId === authorId) return [];
@@ -91,14 +94,7 @@ function discussionNotification(
       kind,
       recipients: [recipient],
       actor,
-      data: {
-        commentId: comment.id,
-        lessonId: lesson.lessonId,
-        lessonTitle: lesson.lessonTitle,
-        courseId: lesson.courseId,
-        courseSlug: lesson.courseSlug,
-        courseTitle: lesson.courseTitle,
-      },
+      data: { commentId: comment.id, ...lesson },
       idempotencyKey: `${kind}:${comment.id}`,
       arrivesRead: false,
     },
@@ -114,28 +110,22 @@ export function askDiscussionQuestion(
   authorId: number,
   lessonId: number,
   body: string
-): PostResult {
-  const valid = validateBody(body);
-  if (!valid.ok) return valid;
-
-  const lesson = findLesson(db, lessonId);
-  if (!lesson) {
-    return { ok: false, error: "Lesson not found" };
-  }
+): Posted {
+  const trimmed = validBody(body);
+  const { lesson, instructorId } = findLesson(db, lessonId);
 
   const comment = db
     .insert(comments)
-    .values({ userId: authorId, lessonId, parentId: null, body: valid.body })
+    .values({ userId: authorId, lessonId, parentId: null, body: trimmed })
     .returning()
     .get();
 
   return {
-    ok: true,
     comment,
     notifications: discussionNotification(
       db,
       "discussion-question",
-      lesson.instructorId,
+      instructorId,
       authorId,
       lesson,
       comment
@@ -155,14 +145,9 @@ export function replyToDiscussionQuestion(
   lessonId: number,
   questionId: number,
   body: string
-): PostResult {
-  const valid = validateBody(body);
-  if (!valid.ok) return valid;
-
-  const lesson = findLesson(db, lessonId);
-  if (!lesson) {
-    return { ok: false, error: "Lesson not found" };
-  }
+): Posted {
+  const trimmed = validBody(body);
+  const { lesson } = findLesson(db, lessonId);
 
   const parent = db
     .select()
@@ -170,28 +155,24 @@ export function replyToDiscussionQuestion(
     .where(eq(comments.id, questionId))
     .get();
   if (!parent) {
-    return { ok: false, error: "Parent comment not found" };
+    throw data("Parent comment not found", { status: 404 });
   }
   if (parent.lessonId !== lessonId) {
-    return { ok: false, error: "Parent comment belongs to a different lesson" };
+    throw data("Parent comment belongs to a different lesson", {
+      status: 400,
+    });
   }
   if (parent.parentId !== null) {
-    return { ok: false, error: "Replies can only be one level deep" };
+    throw data("Replies can only be one level deep", { status: 400 });
   }
 
   const comment = db
     .insert(comments)
-    .values({
-      userId: authorId,
-      lessonId,
-      parentId: questionId,
-      body: valid.body,
-    })
+    .values({ userId: authorId, lessonId, parentId: questionId, body: trimmed })
     .returning()
     .get();
 
   return {
-    ok: true,
     comment,
     notifications: discussionNotification(
       db,

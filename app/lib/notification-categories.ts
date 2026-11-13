@@ -1,25 +1,33 @@
+import { z } from "zod";
 import { UserRole } from "~/db/schema";
 
 // ─── Notification categories ───
-// The code-side category list. Each key is also a Knock category, tagged on
-// the workflows in knock/workflows.ts, so this list must match the Knock
-// dashboard. /settings uses it to decide which toggles a user sees and what
-// they show before the user has ever chosen (Knock answers 404 for a user it
-// doesn't know yet).
+// The code-side category list. Each key is also a Knock category, tagged by
+// hand on the workflows in the Knock dashboard (docs/knock-setup.md), so this
+// list must match the dashboard. Which kind is in which category lives in
+// app/lib/notification-kinds.ts. /settings uses this list to decide which
+// toggles a user sees and what they show before the user has ever chosen
+// (Knock answers 404 for a user it doesn't know yet).
 
-export type NotificationCategory =
-  | "refund-requests"
-  | "my-refunds"
-  | "seat-claims"
-  | "enrollment"
-  | "discussion-questions"
-  | "discussion-replies";
+export const notificationCategorySchema = z.enum([
+  "refund-requests",
+  "my-refunds",
+  "seat-claims",
+  "enrollment",
+  "discussion-questions",
+  "discussion-replies",
+]);
+
+export type NotificationCategory = z.infer<typeof notificationCategorySchema>;
 
 export type NotificationCategoryInfo = {
   key: NotificationCategory;
   /** Shown on /settings, in glossary wording. */
   label: string;
-  /** Roles that can receive it. Buyers and Team Admins are Students. */
+  /**
+   * Roles that can receive it. Anyone can buy, so anyone can be a buyer or a
+   * Team Admin and receive "Your refunds" and "Seat claims".
+   */
   roles: UserRole[];
   defaultEnabled: boolean;
 };
@@ -36,13 +44,13 @@ export const notificationCategories: NotificationCategoryInfo[] = [
   {
     key: "my-refunds",
     label: "Your refunds",
-    roles: [UserRole.Student],
+    roles: everyone,
     defaultEnabled: true,
   },
   {
     key: "seat-claims",
     label: "Seat claims",
-    roles: [UserRole.Student],
+    roles: everyone,
     defaultEnabled: true,
   },
   {
@@ -65,18 +73,33 @@ export const notificationCategories: NotificationCategoryInfo[] = [
   },
 ];
 
-export const notificationCategoryKeys = notificationCategories.map(
-  (category) => category.key
-) as [NotificationCategory, ...NotificationCategory[]];
-
 /** What a user has chosen. A missing category means they haven't chosen. */
-export type CategoryPreferences = Partial<Record<NotificationCategory, boolean>>;
+export const categoryPreferencesSchema = z.record(
+  notificationCategorySchema,
+  z.boolean()
+);
+
+export type CategoryPreferences = z.infer<typeof categoryPreferencesSchema>;
 
 export type NotificationSetting = {
   category: NotificationCategory;
   label: string;
   enabled: boolean;
 };
+
+/** Whether a user gets this category: what they chose, else its default. */
+export function receivesCategory(
+  category: NotificationCategory,
+  preferences: CategoryPreferences
+): boolean {
+  return preferences[category] ?? categoryInfo(category).defaultEnabled;
+}
+
+function categoryInfo(key: NotificationCategory): NotificationCategoryInfo {
+  const info = notificationCategories.find((category) => category.key === key);
+  if (!info) throw new Error(`Unknown notification category: ${key}`);
+  return info;
+}
 
 /** One toggle per category the role can receive, chosen value over default. */
 export function notificationSettingsFor(

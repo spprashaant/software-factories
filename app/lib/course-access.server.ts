@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { UserRole, courses, enrollments, purchases, users } from "~/db/schema";
 import { checkPppAccess } from "~/lib/ppp";
-import type { Db } from "~/lib/refunds.server";
+import type { Db } from "~/db/types";
 
 // ─── Course access, db-first ───
 // What a signed-in user may do with one course. `getAccess` (access.server.ts)
@@ -55,10 +55,10 @@ export function resolveCourseAccess(
       .get();
 
   // PPP only restricts students who bought at a discount — staff are exempt.
-  let ppp = {
+  let countryRestriction: ReturnType<typeof checkPppAccess> = {
     blocked: false,
-    blockedCountry: null as string | null,
-    purchaseCountry: null as string | null,
+    blockedCountry: null,
+    purchaseCountry: null,
   };
 
   if (enrolled && !isStaff && course) {
@@ -69,7 +69,7 @@ export function resolveCourseAccess(
         and(eq(purchases.userId, userId), eq(purchases.courseId, courseId))
       )
       .get();
-    ppp = checkPppAccess(
+    countryRestriction = checkPppAccess(
       course.price,
       course.pppEnabled,
       purchase?.country ?? null,
@@ -83,9 +83,9 @@ export function resolveCourseAccess(
     isOwningInstructor,
     isStaff,
     enrolled,
-    pppBlocked: ppp.blocked,
-    pppBlockedCountry: ppp.blockedCountry,
-    pppPurchaseCountry: ppp.purchaseCountry,
-    canViewContent: isStaff || (enrolled && !ppp.blocked),
+    pppBlocked: countryRestriction.blocked,
+    pppBlockedCountry: countryRestriction.blockedCountry,
+    pppPurchaseCountry: countryRestriction.purchaseCountry,
+    canViewContent: isStaff || (enrolled && !countryRestriction.blocked),
   };
 }

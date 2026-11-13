@@ -6,21 +6,15 @@ import {
   Circle,
   GraduationCap,
   Inbox,
-  MessageCircleQuestion,
-  MessageSquareReply,
-  Receipt,
-  UserPlus,
-  UsersRound,
   X,
-  type LucideIcon,
 } from "lucide-react";
-import type { NotificationCategory } from "../../knock/workflows";
-import { cn } from "~/lib/utils";
+import { cn, formatRelativeTime } from "~/lib/utils";
 import { UserAvatar } from "~/components/user-avatar";
 import {
   badgeLabel,
   describeFeedItem,
   emptyFeedDetails,
+  feedItemIcon,
   feedRowDetail,
   fetchFeed,
   fetchFeedDetails,
@@ -30,7 +24,6 @@ import {
   markRead,
   markUnread,
   mergeFirstPage,
-  relativeTime,
   type FeedConfig,
   type FeedDetails,
   type FeedItem,
@@ -264,9 +257,7 @@ function NotificationDrawer({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  // Kinds this Cadence doesn't know yet are left out.
-  const known = feed.entries.filter((item) => describeFeedItem(item));
-  const groups = groupFeedItems(known, now);
+  const groups = groupFeedItems(feed.entries, now);
 
   return (
     <>
@@ -380,7 +371,7 @@ function FeedRow({
   onToggleRead: () => void;
 }) {
   const described = describeFeedItem(item);
-  if (!described) return null;
+  const KindIcon = feedItemIcon(item);
   const unread = !item.read_at;
   const detail = feedRowDetail(item, details);
 
@@ -427,9 +418,9 @@ function FeedRow({
           </p>
         )}
         <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <CategoryIcon item={item} />
+          <KindIcon className="size-3.5" aria-hidden />
           {described.meta && <span>{described.meta} ·</span>}
-          <span>{relativeTime(item.inserted_at, now)}</span>
+          <span>{formatRelativeTime(item.inserted_at, now)}</span>
         </div>
       </div>
       <button
@@ -469,23 +460,6 @@ function Pager({ feed }: { feed: Feed }) {
       <span className="text-xs text-muted-foreground">{shown}</span>
     </div>
   );
-}
-
-// One icon per workflow category (knock/workflows.ts). Add yours here.
-const CATEGORY_ICONS: Record<NotificationCategory, LucideIcon> = {
-  "refund-requests": Receipt,
-  "my-refunds": Receipt,
-  "seat-claims": UsersRound,
-  enrollment: UserPlus,
-  "discussion-questions": MessageCircleQuestion,
-  "discussion-replies": MessageSquareReply,
-};
-
-function CategoryIcon({ item }: { item: FeedItem }) {
-  const category = item.source.categories?.[0];
-  const Icon =
-    (category && CATEGORY_ICONS[category as NotificationCategory]) || Bell;
-  return <Icon className="size-3.5" aria-hidden />;
 }
 
 function ActorAvatar({ item }: { item: FeedItem }) {

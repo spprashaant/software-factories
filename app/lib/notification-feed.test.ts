@@ -13,6 +13,7 @@ import {
   type FeedConfig,
   type FeedItem,
 } from "~/lib/notification-feed";
+import type { NotificationKind } from "~/lib/notification-kinds";
 
 const config: FeedConfig = {
   knockUserId: "7",
@@ -119,6 +120,21 @@ describe("fetchFeed", () => {
     ]);
     expect(page.after).toBeNull();
   });
+
+  it("leaves out a Notification of a kind this Cadence doesn't know", async () => {
+    const response = feedResponse(["known", "unknown"], null);
+    stubKnock({
+      ...response,
+      entries: [
+        response.entries[0],
+        { ...response.entries[1], source: { key: "course-rated" } },
+      ],
+    });
+
+    const page = await fetchFeed(config);
+
+    expect(page.entries.map((e) => e.id)).toEqual(["known"]);
+  });
 });
 
 describe("marking Notifications", () => {
@@ -206,7 +222,7 @@ describe("mergeFirstPage", () => {
   });
 });
 
-function feedItem(key: string, data: Record<string, unknown>): FeedItem {
+function feedItem(key: NotificationKind, data: Record<string, unknown>): FeedItem {
   return {
     id: "msg_1",
     inserted_at: "2026-11-13T10:00:00Z",
@@ -258,7 +274,7 @@ describe("describeFeedItem for Discussions", () => {
 });
 
 describe("fetchFeedDetails", () => {
-  function withId(id: string, key: string, data: Record<string, unknown>) {
+  function withId(id: string, key: NotificationKind, data: Record<string, unknown>) {
     return { ...feedItem(key, data), id };
   }
 

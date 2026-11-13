@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import path from "path";
 import { fileURLToPath } from "url";
+import { z } from "zod";
 import * as schema from "~/db/schema";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -74,4 +75,26 @@ export function seedBaseData(testDb: ReturnType<typeof createTestDb>) {
     .get();
 
   return { user, instructor, category, course };
+}
+
+const thrownResponseSchema = z.object({
+  data: z.string(),
+  init: z.object({ status: z.number() }),
+});
+
+/**
+ * What a service refused with: the status and message of the response it
+ * threw with `data(message, { status })`. Fails the test if it didn't throw.
+ */
+export function refusalOf(act: () => unknown): {
+  status: number;
+  message: string;
+} {
+  try {
+    act();
+  } catch (thrown) {
+    const { data, init } = thrownResponseSchema.parse(thrown);
+    return { status: init.status, message: data };
+  }
+  throw new Error("Expected a thrown response, but nothing was thrown");
 }

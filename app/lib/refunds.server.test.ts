@@ -649,6 +649,25 @@ describe("the Notification for a decided Refund Request", () => {
     ]);
   });
 
+  it("sends nothing when the Platform Admin decides their own Refund Request", () => {
+    const purchase = buyForSelf(platformAdmin.id);
+    const approvedId = raise(purchase.id, platformAdmin.id);
+    const approved = approveRefundRequest(db, approvedId, platformAdmin.id, null, NOW);
+    const again = buyForSelf(platformAdmin.id);
+    const declinedId = raise(again.id, platformAdmin.id);
+    const declined = declineRefundRequest(
+      db,
+      declinedId,
+      platformAdmin.id,
+      "Changed my mind.",
+      NOW
+    );
+
+    if (!approved.ok || !declined.ok) throw new Error("decision failed");
+    expect(approved.notifications).toEqual([]);
+    expect(declined.notifications).toEqual([]);
+  });
+
   it("never carries the reason or the decision note", () => {
     const purchase = buyForSelf(base.user.id);
     const approvedId = raise(purchase.id, base.user.id);

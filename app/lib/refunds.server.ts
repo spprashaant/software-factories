@@ -1,7 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { alias } from "drizzle-orm/sqlite-core";
-import * as schema from "~/db/schema";
+import type { Db, Queryable } from "~/db/types";
 import {
   coupons,
   courses,
@@ -19,6 +18,7 @@ import {
 } from "~/db/schema";
 import { formatPrice } from "~/lib/utils";
 import type { Notification } from "~/lib/notifications.server";
+import { findPerson } from "~/lib/people.server";
 import {
   REFUND_COMPLETION_LIMIT,
   REFUND_WATCH_LIMIT_SECONDS,
@@ -34,9 +34,6 @@ import {
 // Every function takes the database first, so tests can hand in an in-memory
 // one. Uses positional parameters (project convention).
 
-export type Db = BetterSQLite3Database<typeof schema>;
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-type Queryable = Db | Tx;
 
 type Purchase = typeof purchases.$inferSelect;
 type Seat = typeof coupons.$inferSelect;
@@ -759,15 +756,13 @@ export function approveRefundRequest(
     return {
       ok: true,
       email: buildDecisionEmail(tx, purchase, RefundStatus.Approved, note),
-      notifications: [
-        refundDecidedNotification(
-          tx,
-          refundRequestId,
-          purchase,
-          RefundStatus.Approved,
-          platformAdminId
-        ),
-      ],
+      notifications: refundDecidedNotifications(
+        tx,
+        refundRequestId,
+        purchase,
+        RefundStatus.Approved,
+        platformAdminId
+      ),
     };
   });
 }
@@ -816,59 +811,59 @@ export function declineRefundRequest(
         RefundStatus.Declined,
         trimmedNote
       ),
-      notifications: [
-        refundDecidedNotification(
-          tx,
-          refundRequestId,
-          found.purchase,
-          RefundStatus.Declined,
-          platformAdminId
-        ),
-      ],
+      notifications: refundDecidedNotifications(
+        tx,
+        refundRequestId,
+        found.purchase,
+        RefundStatus.Declined,
+        platformAdminId
+      ),
     };
   });
 }
 
 /**
  * "Your refund for {course} was approved / declined", to the buyer, with the
- * deciding Platform Admin as actor. The decision note stays in Cadence and is
- * looked up when the feed renders.
+ * deciding Platform Admin as actor. None when a Platform Admin decides their
+ * own Refund Request. The decision note stays in Cadence and is looked up
+ * when the feed renders.
  */
-function refundDecidedNotification(
+function refundDecidedNotifications(
   db: Queryable,
   refundRequestId: number,
   purchase: Purchase,
   decision: RefundStatus.Approved | RefundStatus.Declined,
   platformAdminId: number
-): Notification {
-  const person = (id: number) => {
-    const user = db
-      .select({ id: users.id, name: users.name })
-      .from(users)
-      .where(eq(users.id, id))
-      .get();
-    return user ?? { id, name: "" };
-  };
+): Notification[] {
+  if (purchase.userId === platformAdminId) return [];
+
+  const buyer = findPerson(db, purchase.userId);
+  const platformAdmin = findPerson(db, platformAdminId);
+  if (!buyer || !platformAdmin) return [];
   const course = db
     .select({ title: courses.title })
     .from(courses)
     .where(eq(courses.id, purchase.courseId))
     .get();
 
-  return {
-    kind:
-      decision === RefundStatus.Approved ? "refund-approved" : "refund-declined",
-    recipients: [person(purchase.userId)],
-    actor: person(platformAdminId),
-    data: {
-      refundRequestId,
-      courseId: purchase.courseId,
-      courseTitle: course?.title ?? "",
-      purchaseKind: kindOf(getSeats(db, purchase.id)),
+  return [
+    {
+      kind:
+        decision === RefundStatus.Approved
+          ? "refund-approved"
+          : "refund-declined",
+      recipients: [buyer],
+      actor: platformAdmin,
+      data: {
+        refundRequestId,
+        courseId: purchase.courseId,
+        courseTitle: course?.title ?? "",
+        purchaseKind: kindOf(getSeats(db, purchase.id)),
+      },
+      idempotencyKey: `refund-decided:${refundRequestId}`,
+      arrivesRead: false,
     },
-    idempotencyKey: `refund-decided:${refundRequestId}`,
-    arrivesRead: false,
-  };
+  ];
 }
 
 /** The email the buyer gets once their Refund Request is decided. */

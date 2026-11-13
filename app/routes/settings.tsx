@@ -19,7 +19,7 @@ import { formatPrice } from "~/lib/utils";
 import { listRefundRequestsForBuyer } from "~/lib/refunds.server";
 import { defaultTransport } from "~/lib/notifications.server";
 import {
-  notificationCategoryKeys,
+  notificationCategorySchema,
   notificationSettingsFor,
   type CategoryPreferences,
   type NotificationSetting,
@@ -33,7 +33,7 @@ const settingsSchema = z.discriminatedUnion("intent", [
   }),
   z.object({
     intent: z.literal("set-notification-category"),
-    category: z.enum(notificationCategoryKeys),
+    category: notificationCategorySchema,
     enabled: z.enum(["true", "false"]).transform((value) => value === "true"),
   }),
 ]);
@@ -119,10 +119,7 @@ export async function action({ request }: Route.ActionArgs) {
       (setting) => setting.category === category
     );
     if (!receivable) {
-      return data(
-        { errors: { category: "You don't receive that category." } },
-        { status: 400 }
-      );
+      throw data("You don't receive that category.", { status: 403 });
     }
     try {
       await defaultTransport().writePreference(
@@ -132,10 +129,7 @@ export async function action({ request }: Route.ActionArgs) {
       );
     } catch (error) {
       console.error("Could not save notification preference:", error);
-      return data(
-        { errors: { category: "Couldn't save that. Please try again." } },
-        { status: 502 }
-      );
+      throw data("Couldn't save that. Please try again.", { status: 502 });
     }
     return { notificationCategory: category, enabled };
   }

@@ -9,7 +9,11 @@ import {
   CommentThread,
   type RenderedComment,
 } from "~/components/comment-thread";
-import { MIN_COMMENT_LENGTH, MAX_COMMENT_LENGTH } from "~/lib/comments";
+import {
+  commentBodySchema,
+  MAX_COMMENT_LENGTH,
+  MIN_COMMENT_LENGTH,
+} from "~/lib/comments";
 import {
   askDiscussionQuestion,
   replyToDiscussionQuestion,
@@ -72,7 +76,7 @@ const markCompleteSchema = z.object({
 
 const createCommentSchema = z.object({
   intent: z.literal("create-comment"),
-  body: z.string(),
+  body: commentBodySchema("Enter a comment before posting."),
   parentId: z.coerce.number().int().optional(),
 });
 
@@ -870,8 +874,12 @@ export async function action({ params, request }: Route.ActionArgs) {
       if (intent === "create-comment") {
         const parsed = parseFormData(formData, createCommentSchema);
         if (!parsed.success) {
-          return { ok: false, error: "Enter a comment before posting." };
+          return {
+            ok: false,
+            error: parsed.errors.body ?? "Enter a comment before posting.",
+          };
         }
+        // Anything else that stops the post is thrown by the service.
         const { parentId, body } = parsed.data;
         const posted =
           parentId === undefined
@@ -883,9 +891,6 @@ export async function action({ params, request }: Route.ActionArgs) {
                 parentId,
                 body
               );
-        if (!posted.ok) {
-          return { ok: false, error: posted.error };
-        }
         // The comment is already saved: notify() logs failures and never throws.
         await notify(posted.notifications);
         return { ok: true };

@@ -1,7 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { comments, lessons, modules, purchases, refunds } from "~/db/schema";
 import { resolveCourseAccess } from "~/lib/course-access.server";
-import type { Db } from "~/lib/refunds.server";
+import type { Db } from "~/db/types";
 import type { FeedDetailIds, FeedDetails } from "~/lib/notification-feed";
 
 // ─── Notification Feed details ───
