@@ -57,3 +57,6 @@ These can't be pushed from code:
 | Key             | Catalogue row            | Category          | Channel     |
 | --------------- | ------------------------ | ----------------- | ----------- |
 | `refund-opened` | 1, Refund Request opened | `refund-requests` | In-app feed |
+| `refund-received` | 8, Refund Request received (arrives read) | `my-refunds` | In-app feed |
+| `refund-approved` | 2, Refund Request approved | `my-refunds` | In-app feed |
+| `refund-declined` | 3, Refund Request declined | `my-refunds` | In-app feed |
