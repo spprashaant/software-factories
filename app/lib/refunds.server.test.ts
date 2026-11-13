@@ -237,6 +237,104 @@ describe("raising a Refund Request", () => {
   });
 });
 
+describe("the Notification for a raised Refund Request", () => {
+  function raiseAndGetNotifications(purchaseId: number, buyerId: number) {
+    const result = raiseRefundRequest(
+      db,
+      purchaseId,
+      buyerId,
+      "It was not what I expected.",
+      NOW
+    );
+    if (!result.ok) throw new Error(result.error);
+    return { refundRequestId: result.refundRequestId, notifications: result.notifications };
+  }
+
+  it("tells the Platform Admin who asked for a refund on which course", () => {
+    const purchase = buyForSelf(base.user.id);
+
+    const { refundRequestId, notifications } = raiseAndGetNotifications(
+      purchase.id,
+      base.user.id
+    );
+
+    expect(notifications).toEqual([
+      {
+        kind: "refund-opened",
+        recipients: [{ id: platformAdmin.id, name: "Pat Admin" }],
+        actor: { id: base.user.id, name: "Test User" },
+        data: {
+          refundRequestId,
+          courseId: base.course.id,
+          courseTitle: "Test Course",
+          purchaseKind: "individual_purchase",
+        },
+        idempotencyKey: `refund-opened:${refundRequestId}`,
+        arrivesRead: false,
+      },
+    ]);
+  });
+
+  it("goes to every Platform Admin except one who raised it as a buyer", () => {
+    const otherAdmin = db
+      .insert(schema.users)
+      .values({ name: "Quinn Admin", email: "quinn@example.com", role: UserRole.Admin })
+      .returning()
+      .get();
+    const purchase = buyForSelf(platformAdmin.id);
+
+    const { notifications } = raiseAndGetNotifications(purchase.id, platformAdmin.id);
+
+    expect(notifications.map((n) => n.recipients)).toEqual([
+      [{ id: otherAdmin.id, name: "Quinn Admin" }],
+    ]);
+  });
+
+  it("finds Platform Admins by their role when the request is raised", () => {
+    const promoted = addLearner("Ben");
+    db.update(schema.users)
+      .set({ role: UserRole.Admin })
+      .where(eq(schema.users.id, promoted.id))
+      .run();
+    const purchase = buyForSelf(base.user.id);
+
+    const { notifications } = raiseAndGetNotifications(purchase.id, base.user.id);
+
+    expect(notifications[0].recipients.map((r) => r.name)).toEqual([
+      "Pat Admin",
+      "Ben",
+    ]);
+  });
+
+  it("sends nothing when the only Platform Admin raised it", () => {
+    const purchase = buyForSelf(platformAdmin.id);
+
+    const { notifications } = raiseAndGetNotifications(purchase.id, platformAdmin.id);
+
+    expect(notifications).toEqual([]);
+  });
+
+  it("never carries the buyer's reason", () => {
+    const purchase = buyForSelf(base.user.id);
+
+    const { notifications } = raiseAndGetNotifications(purchase.id, base.user.id);
+
+    expect(JSON.stringify(notifications)).not.toContain("not what I expected");
+  });
+
+  it("names a Team Licence as the Purchase kind", () => {
+    const teamAdmin = addLearner("Priya");
+    const { purchase } = buySeats(teamAdmin.id, 2);
+
+    const { notifications } = raiseAndGetNotifications(purchase.id, teamAdmin.id);
+
+    expect(notifications[0]).toMatchObject({
+      actor: { id: teamAdmin.id, name: "Priya" },
+      data: { purchaseKind: "team_licence" },
+    });
+  });
+});
+
 describe("the refund offer on the course page", () => {
   it("offers the newest Individual Purchase, not a newer Team Licence", () => {
     const individual = buyForSelf(base.user.id, 3);

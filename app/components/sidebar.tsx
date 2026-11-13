@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { cn } from "~/lib/utils";
 import { UserRole } from "~/db/schema";
 import { UserAvatar } from "~/components/user-avatar";
+import { NotificationBell } from "~/components/notification-feed";
+import type { FeedConfig } from "~/lib/notification-feed";
 import {
   BookOpen,
   ChartColumn,
@@ -41,6 +43,8 @@ interface SidebarProps {
   currentUser: CurrentUser | null;
   recentCourses?: RecentCourse[];
   isTeamAdmin?: boolean;
+  /** Null when Knock isn't configured or nobody is signed in: no bell. */
+  feedConfig?: FeedConfig | null;
 }
 
 interface NavItem {
@@ -117,6 +121,7 @@ export function Sidebar({
   currentUser,
   recentCourses = [],
   isTeamAdmin = false,
+  feedConfig = null,
 }: SidebarProps) {
   const currentUserRole = currentUser?.role ?? null;
   const [isDark, setIsDark] = useState(false);
@@ -140,6 +145,11 @@ export function Sidebar({
         <NavLink to="/" className="text-lg font-bold tracking-tight">
           Cadence
         </NavLink>
+        {feedConfig && (
+          // Keyed by user so switching users in DevUI never shows the last
+          // user's feed.
+          <NotificationBell key={feedConfig.knockUserId} config={feedConfig} />
+        )}
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
