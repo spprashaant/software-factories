@@ -18,6 +18,8 @@ import { knockEnv } from "~/lib/knock.server";
  */
 export type NotificationKind =
   | "refund-opened"
+  | "seat-claimed"
+  | "enrollment"
   | "discussion-question"
   | "discussion-reply";
 

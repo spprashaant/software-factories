@@ -57,5 +57,11 @@ These can't be pushed from code:
 | Key                   | Catalogue row                | Category               | Channel     |
 | --------------------- | ---------------------------- | ---------------------- | ----------- |
 | `refund-opened`       | 1, Refund Request opened     | `refund-requests`      | In-app feed |
+| `seat-claimed`        | 4, Seat claimed              | `seat-claims`          | In-app feed |
+| `enrollment`          | 5, Enrollment created        | `enrollment`           | In-app feed |
 | `discussion-question` | 6, Discussion Question asked | `discussion-questions` | In-app feed |
 | `discussion-reply`    | 7, Discussion Reply posted   | `discussion-replies`   | In-app feed |
+
+The `enrollment` category key is fixed: the environment default preference
+set (Development set; Production step 2 above) uses it to keep Enrollment
+Notifications off until an Instructor opts in.

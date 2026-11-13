@@ -122,6 +122,29 @@ export function describeFeedItem(item: FeedItem): DescribedNotification | null {
         ],
         url: "/admin/refunds",
       };
+    case "seat-claimed":
+      return {
+        title: [
+          { text: actor, bold: true },
+          { text: " claimed a Seat on ", bold: false },
+          { text: course, bold: true },
+        ],
+        url: "/team",
+      };
+    case "enrollment": {
+      const courseId = data.courseId;
+      return {
+        title: [
+          { text: actor, bold: true },
+          { text: " enrolled on ", bold: false },
+          { text: course, bold: true },
+        ],
+        url:
+          typeof courseId === "number" || typeof courseId === "string"
+            ? `/instructor/${courseId}/students`
+            : "/instructor",
+      };
+    }
     case "discussion-question":
     case "discussion-reply":
       return {
