@@ -1,6 +1,10 @@
 import { eq } from "drizzle-orm";
-import { comments, courses, lessons, modules } from "~/db/schema";
+import { comments, courses, lessons, modules, users } from "~/db/schema";
 import { MAX_COMMENT_LENGTH, MIN_COMMENT_LENGTH } from "~/lib/comments";
+import type {
+  Notification,
+  NotificationPerson,
+} from "~/lib/notifications.server";
 import type { Db } from "~/lib/refunds.server";
 
 // ─── Discussions ───
@@ -14,7 +18,7 @@ import type { Db } from "~/lib/refunds.server";
 type Comment = typeof comments.$inferSelect;
 
 export type PostResult =
-  | { ok: true; comment: Comment }
+  | { ok: true; comment: Comment; notifications: Notification[] }
   | { ok: false; error: string };
 
 function validateBody(body: string): { ok: true; body: string } | { ok: false; error: string } {
@@ -31,9 +35,25 @@ function validateBody(body: string): { ok: true; body: string } | { ok: false; e
   return { ok: true, body: trimmed };
 }
 
-function lessonExists(db: Db, lessonId: number) {
-  return !!db
-    .select({ id: lessons.id })
+type LessonContext = {
+  lessonId: number;
+  lessonTitle: string;
+  courseId: number;
+  courseSlug: string;
+  courseTitle: string;
+  instructorId: number;
+};
+
+function findLesson(db: Db, lessonId: number): LessonContext | undefined {
+  return db
+    .select({
+      lessonId: lessons.id,
+      lessonTitle: lessons.title,
+      courseId: courses.id,
+      courseSlug: courses.slug,
+      courseTitle: courses.title,
+      instructorId: courses.instructorId,
+    })
     .from(lessons)
     .innerJoin(modules, eq(lessons.moduleId, modules.id))
     .innerJoin(courses, eq(modules.courseId, courses.id))
@@ -41,7 +61,54 @@ function lessonExists(db: Db, lessonId: number) {
     .get();
 }
 
-/** Posts a top-level Discussion Question on a lesson. */
+function findPerson(db: Db, userId: number): NotificationPerson | undefined {
+  return db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+}
+
+// ─── Notifications ───
+// Only ids, names and titles: never the comment text, which the feed shows
+// from Cadence at render time.
+
+function discussionNotification(
+  db: Db,
+  kind: "discussion-question" | "discussion-reply",
+  recipientId: number,
+  authorId: number,
+  lesson: LessonContext,
+  comment: Comment
+): Notification[] {
+  if (recipientId === authorId) return [];
+  const recipient = findPerson(db, recipientId);
+  const actor = findPerson(db, authorId);
+  if (!recipient || !actor) return [];
+
+  return [
+    {
+      kind,
+      recipients: [recipient],
+      actor,
+      data: {
+        commentId: comment.id,
+        lessonId: lesson.lessonId,
+        lessonTitle: lesson.lessonTitle,
+        courseId: lesson.courseId,
+        courseSlug: lesson.courseSlug,
+        courseTitle: lesson.courseTitle,
+      },
+      idempotencyKey: `${kind}:${comment.id}`,
+      arrivesRead: false,
+    },
+  ];
+}
+
+/**
+ * Posts a top-level Discussion Question on a lesson. "{Person} asked on
+ * {lesson}" goes to the course's Instructor, unless they asked it.
+ */
 export function askDiscussionQuestion(
   db: Db,
   authorId: number,
@@ -51,7 +118,8 @@ export function askDiscussionQuestion(
   const valid = validateBody(body);
   if (!valid.ok) return valid;
 
-  if (!lessonExists(db, lessonId)) {
+  const lesson = findLesson(db, lessonId);
+  if (!lesson) {
     return { ok: false, error: "Lesson not found" };
   }
 
@@ -61,12 +129,25 @@ export function askDiscussionQuestion(
     .returning()
     .get();
 
-  return { ok: true, comment };
+  return {
+    ok: true,
+    comment,
+    notifications: discussionNotification(
+      db,
+      "discussion-question",
+      lesson.instructorId,
+      authorId,
+      lesson,
+      comment
+    ),
+  };
 }
 
 /**
  * Posts a Discussion Reply to a Discussion Question. Replies are one level
- * deep, and the Discussion Question must be on the same lesson.
+ * deep, and the Discussion Question must be on the same lesson. "{Person}
+ * replied on {lesson}" goes to the Discussion Question's author, unless they
+ * replied; nobody else in the thread hears about it.
  */
 export function replyToDiscussionQuestion(
   db: Db,
@@ -78,7 +159,8 @@ export function replyToDiscussionQuestion(
   const valid = validateBody(body);
   if (!valid.ok) return valid;
 
-  if (!lessonExists(db, lessonId)) {
+  const lesson = findLesson(db, lessonId);
+  if (!lesson) {
     return { ok: false, error: "Lesson not found" };
   }
 
@@ -108,5 +190,16 @@ export function replyToDiscussionQuestion(
     .returning()
     .get();
 
-  return { ok: true, comment };
+  return {
+    ok: true,
+    comment,
+    notifications: discussionNotification(
+      db,
+      "discussion-reply",
+      parent.userId,
+      authorId,
+      lesson,
+      comment
+    ),
+  };
 }

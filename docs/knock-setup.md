@@ -54,6 +54,8 @@ These can't be pushed from code:
 
 ## Workflows
 
-| Key             | Catalogue row            | Category          | Channel     |
-| --------------- | ------------------------ | ----------------- | ----------- |
-| `refund-opened` | 1, Refund Request opened | `refund-requests` | In-app feed |
+| Key                   | Catalogue row                | Category               | Channel     |
+| --------------------- | ---------------------------- | ---------------------- | ----------- |
+| `refund-opened`       | 1, Refund Request opened     | `refund-requests`      | In-app feed |
+| `discussion-question` | 6, Discussion Question asked | `discussion-questions` | In-app feed |
+| `discussion-reply`    | 7, Discussion Reply posted   | `discussion-replies`   | In-app feed |

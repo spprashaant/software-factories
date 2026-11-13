@@ -16,7 +16,10 @@ import { knockEnv } from "~/lib/knock.server";
  * One row of the v1 catalogue. Each kind is also the key of the Knock
  * workflow that delivers it (see knock/workflows.ts).
  */
-export type NotificationKind = "refund-opened";
+export type NotificationKind =
+  | "refund-opened"
+  | "discussion-question"
+  | "discussion-reply";
 
 export type NotificationPerson = { id: number; name: string };
 

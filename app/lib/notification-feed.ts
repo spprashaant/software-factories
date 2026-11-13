@@ -94,6 +94,8 @@ export type TitlePart = { text: string; bold: boolean };
 
 export type DescribedNotification = {
   title: TitlePart[];
+  /** Shown before the time on the row's meta line, e.g. the course. */
+  meta?: string;
   url: string;
 };
 
@@ -119,6 +121,23 @@ export function describeFeedItem(item: FeedItem): DescribedNotification | null {
           { text: course, bold: true },
         ],
         url: "/admin/refunds",
+      };
+    case "discussion-question":
+    case "discussion-reply":
+      return {
+        title: [
+          { text: actor, bold: true },
+          {
+            text:
+              item.source.key === "discussion-question"
+                ? " asked on "
+                : " replied on ",
+            bold: false,
+          },
+          { text: text(data.lessonTitle, "a lesson"), bold: true },
+        ],
+        meta: course,
+        url: `/courses/${encodeURIComponent(text(data.courseSlug, ""))}/lessons/${String(data.lessonId)}#comment-${String(data.commentId)}`,
       };
     default:
       return null;

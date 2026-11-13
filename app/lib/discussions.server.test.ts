@@ -191,3 +191,147 @@ describe("replyToDiscussionQuestion", () => {
     expect(result).toEqual({ ok: false, error: "Parent comment not found" });
   });
 });
+
+describe("Discussion Notifications", () => {
+  it("tells the course's Instructor when someone asks a Discussion Question", () => {
+    const result = askDiscussionQuestion(
+      db,
+      base.user.id,
+      lessonId,
+      "Secret question text"
+    );
+    if (!result.ok) throw new Error(result.error);
+
+    expect(result.notifications).toEqual([
+      {
+        kind: "discussion-question",
+        recipients: [{ id: base.instructor.id, name: "Test Instructor" }],
+        actor: { id: base.user.id, name: "Test User" },
+        data: {
+          commentId: result.comment.id,
+          lessonId,
+          lessonTitle: "Lesson 1",
+          courseId: base.course.id,
+          courseSlug: "test-course",
+          courseTitle: "Test Course",
+        },
+        idempotencyKey: `discussion-question:${result.comment.id}`,
+        arrivesRead: false,
+      },
+    ]);
+  });
+
+  it("tells nobody when the Instructor asks on their own course", () => {
+    const result = askDiscussionQuestion(
+      db,
+      base.instructor.id,
+      lessonId,
+      "Note to self"
+    );
+    if (!result.ok) throw new Error(result.error);
+
+    expect(result.notifications).toEqual([]);
+  });
+
+  it("tells the Discussion Question's author when someone else replies", () => {
+    const other = db
+      .insert(schema.users)
+      .values({
+        name: "Other Student",
+        email: "other@example.com",
+        role: schema.UserRole.Student,
+      })
+      .returning()
+      .get();
+    const question = ask();
+
+    const result = replyToDiscussionQuestion(
+      db,
+      other.id,
+      lessonId,
+      question.id,
+      "Secret reply text"
+    );
+    if (!result.ok) throw new Error(result.error);
+
+    expect(result.notifications).toEqual([
+      {
+        kind: "discussion-reply",
+        recipients: [{ id: base.user.id, name: "Test User" }],
+        actor: { id: other.id, name: "Other Student" },
+        data: {
+          commentId: result.comment.id,
+          lessonId,
+          lessonTitle: "Lesson 1",
+          courseId: base.course.id,
+          courseSlug: "test-course",
+          courseTitle: "Test Course",
+        },
+        idempotencyKey: `discussion-reply:${result.comment.id}`,
+        arrivesRead: false,
+      },
+    ]);
+  });
+
+  it("tells the author when the Instructor replies (as from /instructor/questions)", () => {
+    const question = ask();
+
+    const result = replyToDiscussionQuestion(
+      db,
+      base.instructor.id,
+      lessonId,
+      question.id,
+      "Instructor answer"
+    );
+    if (!result.ok) throw new Error(result.error);
+
+    expect(result.notifications).toMatchObject([
+      {
+        kind: "discussion-reply",
+        recipients: [{ id: base.user.id, name: "Test User" }],
+        actor: { id: base.instructor.id, name: "Test Instructor" },
+      },
+    ]);
+  });
+
+  it("tells nobody when the author replies to their own Discussion Question", () => {
+    const question = ask();
+
+    const result = replyToDiscussionQuestion(
+      db,
+      base.user.id,
+      lessonId,
+      question.id,
+      "Answering myself"
+    );
+    if (!result.ok) throw new Error(result.error);
+
+    expect(result.notifications).toEqual([]);
+  });
+
+  it("never puts comment text in a payload", () => {
+    const asked = askDiscussionQuestion(
+      db,
+      base.user.id,
+      lessonId,
+      "SECRET-QUESTION"
+    );
+    if (!asked.ok) throw new Error(asked.error);
+    const replied = replyToDiscussionQuestion(
+      db,
+      base.instructor.id,
+      lessonId,
+      asked.comment.id,
+      "SECRET-REPLY"
+    );
+    if (!replied.ok) throw new Error(replied.error);
+
+    const payloads = JSON.stringify([
+      ...asked.notifications,
+      ...replied.notifications,
+    ]);
+    expect(asked.notifications).toHaveLength(1);
+    expect(replied.notifications).toHaveLength(1);
+    expect(payloads).not.toContain("SECRET");
+  });
+});

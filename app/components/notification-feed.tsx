@@ -133,7 +133,7 @@ function NotificationDrawer({
             </p>
           ) : (
             <ul>
-              {rows.map(({ item, title, url }) => (
+              {rows.map(({ item, title, meta, url }) => (
                 <li key={item.id}>
                   <button
                     type="button"
@@ -167,6 +167,7 @@ function NotificationDrawer({
                         )}
                       </span>
                       <span className="mt-1 block text-xs text-muted-foreground">
+                        {meta && `${meta} · `}
                         {relativeTime(item.inserted_at, now)}
                       </span>
                     </span>
