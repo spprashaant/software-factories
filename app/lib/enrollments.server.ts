@@ -1,6 +1,10 @@
 import { and, eq } from "drizzle-orm";
-import { coupons, enrollments, purchases } from "~/db/schema";
+import { coupons, courses, enrollments, purchases, users } from "~/db/schema";
 import { getSeatAvailability, type Db } from "~/lib/refunds.server";
+import type {
+  Notification,
+  NotificationPerson,
+} from "~/lib/notifications.server";
 
 // ─── Enrollments ───
 // The two ways a Student gets an Enrollment: claiming a Seat on a Team Licence,
@@ -28,7 +32,7 @@ function findEnrollment(db: Db, userId: number, courseId: number) {
 }
 
 export type ClaimResult =
-  | { ok: true; enrollment: Enrollment }
+  | { ok: true; enrollment: Enrollment; notifications: Notification[] }
   | { ok: false; error: string };
 
 /**
@@ -78,7 +82,7 @@ export function claimSeat(
     };
   }
 
-  return db.transaction((tx) => {
+  const enrollment = db.transaction((tx) => {
     tx.update(coupons)
       .set({
         redeemedByUserId: studentId,
@@ -87,18 +91,35 @@ export function claimSeat(
       .where(eq(coupons.id, seat.id))
       .run();
 
-    const enrollment = tx
+    return tx
       .insert(enrollments)
       .values({ userId: studentId, courseId: seat.courseId })
       .returning()
       .get();
-
-    return { ok: true as const, enrollment };
   });
+
+  return {
+    ok: true,
+    enrollment,
+    notifications: [
+      seatClaimedNotification(
+        db,
+        seat.id,
+        purchase?.userId ?? null,
+        enrollment
+      ),
+      enrollmentNotification(db, enrollment),
+    ].filter((notification) => notification !== null),
+  };
 }
 
 export type IndividualPurchaseResult =
-  | { ok: true; purchase: Purchase; enrollment: Enrollment }
+  | {
+      ok: true;
+      purchase: Purchase;
+      enrollment: Enrollment;
+      notifications: Notification[];
+    }
   | { ok: false; error: string };
 
 /**
@@ -117,7 +138,7 @@ export function makeIndividualPurchase(
     return { ok: false, error: "You are already enrolled in this course" };
   }
 
-  return db.transaction((tx) => {
+  const { purchase, enrollment } = db.transaction((tx) => {
     const purchase = tx
       .insert(purchases)
       .values({ userId: buyerId, courseId, amountPaid, country })
@@ -130,6 +151,94 @@ export function makeIndividualPurchase(
       .returning()
       .get();
 
-    return { ok: true as const, purchase, enrollment };
+    return { purchase, enrollment };
   });
+
+  return {
+    ok: true,
+    purchase,
+    enrollment,
+    notifications: [enrollmentNotification(db, enrollment)].filter(
+      (notification) => notification !== null
+    ),
+  };
+}
+
+// ─── Notifications ───
+
+function findPerson(db: Db, id: number): NotificationPerson | undefined {
+  return db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(eq(users.id, id))
+    .get();
+}
+
+function findCourse(db: Db, id: number) {
+  return db
+    .select({
+      id: courses.id,
+      title: courses.title,
+      instructorId: courses.instructorId,
+    })
+    .from(courses)
+    .where(eq(courses.id, id))
+    .get();
+}
+
+/**
+ * "{Student} claimed a Seat on {course}", to the Team Admin who bought the
+ * Team Licence, unless they claimed it themselves.
+ */
+function seatClaimedNotification(
+  db: Db,
+  seatId: number,
+  buyerId: number | null,
+  enrollment: Enrollment
+): Notification | null {
+  if (buyerId === null || buyerId === enrollment.userId) return null;
+
+  const teamAdmin = findPerson(db, buyerId);
+  const student = findPerson(db, enrollment.userId);
+  const course = findCourse(db, enrollment.courseId);
+  if (!teamAdmin || !student || !course) return null;
+
+  return {
+    kind: "seat-claimed",
+    recipients: [teamAdmin],
+    actor: student,
+    data: { seatId, courseId: course.id, courseTitle: course.title },
+    idempotencyKey: `seat-claimed:${seatId}`,
+    arrivesRead: false,
+  };
+}
+
+/**
+ * "{Student} enrolled on {course}", to the course's Instructor, unless the
+ * Instructor is the Student. Instructors only receive it once they opt in:
+ * Knock's environment default turns the `enrollment` category off.
+ */
+function enrollmentNotification(
+  db: Db,
+  enrollment: Enrollment
+): Notification | null {
+  const course = findCourse(db, enrollment.courseId);
+  if (!course || course.instructorId === enrollment.userId) return null;
+
+  const instructor = findPerson(db, course.instructorId);
+  const student = findPerson(db, enrollment.userId);
+  if (!instructor || !student) return null;
+
+  return {
+    kind: "enrollment",
+    recipients: [instructor],
+    actor: student,
+    data: {
+      enrollmentId: enrollment.id,
+      courseId: course.id,
+      courseTitle: course.title,
+    },
+    idempotencyKey: `enrollment:${enrollment.id}`,
+    arrivesRead: false,
+  };
 }
