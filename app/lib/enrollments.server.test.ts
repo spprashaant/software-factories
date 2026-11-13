@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createTestDb, seedBaseData } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { RefundStatus, UserRole } from "~/db/schema";
-import { claimSeat } from "./enrollments.server";
+import { claimSeat, makeIndividualPurchase } from "./enrollments.server";
 
 type TestDb = ReturnType<typeof createTestDb>;
 
@@ -142,5 +142,46 @@ describe("claimSeat", () => {
     const result = claimSeat(db, "NOPE", base.user.id, "GB");
 
     expect(result).toEqual({ ok: false, error: "Coupon not found" });
+  });
+});
+
+describe("makeIndividualPurchase", () => {
+  it("records the Purchase and gives the buyer an Enrollment", () => {
+    const result = makeIndividualPurchase(
+      db,
+      base.user.id,
+      base.course.id,
+      4900,
+      "IN"
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      purchase: {
+        userId: base.user.id,
+        courseId: base.course.id,
+        amountPaid: 4900,
+        country: "IN",
+      },
+      enrollment: { userId: base.user.id, courseId: base.course.id },
+    });
+  });
+
+  it("refuses a buyer who is already enrolled, e.g. through a Claimed Seat", () => {
+    const { seats } = buyTeamLicence();
+    claimSeat(db, seats[0].code, base.user.id, "GB");
+
+    const result = makeIndividualPurchase(
+      db,
+      base.user.id,
+      base.course.id,
+      7900,
+      "GB"
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: "You are already enrolled in this course",
+    });
   });
 });

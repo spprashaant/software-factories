@@ -10,6 +10,7 @@ import { getSeatAvailability, type Db } from "~/lib/refunds.server";
 // one. Uses positional parameters (project convention).
 
 type Enrollment = typeof enrollments.$inferSelect;
+type Purchase = typeof purchases.$inferSelect;
 
 export const SEAT_ON_HOLD =
   "This seat can't be claimed right now. Ask the person who shared it with you.";
@@ -93,5 +94,42 @@ export function claimSeat(
       .get();
 
     return { ok: true as const, enrollment };
+  });
+}
+
+export type IndividualPurchaseResult =
+  | { ok: true; purchase: Purchase; enrollment: Enrollment }
+  | { ok: false; error: string };
+
+/**
+ * Records an Individual Purchase and gives the buyer an Enrollment. A Student
+ * has at most one Enrollment per course, so a buyer already enrolled is
+ * refused.
+ */
+export function makeIndividualPurchase(
+  db: Db,
+  buyerId: number,
+  courseId: number,
+  amountPaid: number,
+  country: string | null
+): IndividualPurchaseResult {
+  if (findEnrollment(db, buyerId, courseId)) {
+    return { ok: false, error: "You are already enrolled in this course" };
+  }
+
+  return db.transaction((tx) => {
+    const purchase = tx
+      .insert(purchases)
+      .values({ userId: buyerId, courseId, amountPaid, country })
+      .returning()
+      .get();
+
+    const enrollment = tx
+      .insert(enrollments)
+      .values({ userId: buyerId, courseId })
+      .returning()
+      .get();
+
+    return { ok: true as const, purchase, enrollment };
   });
 }
