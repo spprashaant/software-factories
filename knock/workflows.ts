@@ -1,3 +1,4 @@
+import type { NotificationCategory } from "~/lib/notification-categories";
 import type { NotificationKind } from "~/lib/notifications.server";
 
 // ─── Knock workflows, as code ───
@@ -10,14 +11,10 @@ import type { NotificationKind } from "~/lib/notifications.server";
 // The feed renders its own titles (app/lib/notification-feed.ts), so the
 // template body here is what Knock's dashboard and previews show.
 
-export type NotificationCategory =
-  | "refund-requests"
-  | "my-refunds"
-  | "seat-claims"
-  // Fixed key: Knock's environment default preference set turns it off.
-  | "enrollment"
-  | "discussion-questions"
-  | "discussion-replies";
+// Categories (and their labels and defaults) live in
+// app/lib/notification-categories.ts. The `enrollment` key is fixed: Knock's
+// environment default preference set turns it off.
+export type { NotificationCategory };
 
 export type KnockWorkflow = {
   key: NotificationKind;
