@@ -1,20 +1,24 @@
+import { z } from "zod";
 import { UserRole } from "~/db/schema";
 
 // ─── Notification categories ───
 // The code-side category list. Each key is also a Knock category, tagged by
 // hand on the workflows in the Knock dashboard (docs/knock-setup.md), so this
 // list must match the dashboard. Which kind is in which category lives in
-// app/lib/notification-kinds.ts. /settings uses it to decide which toggles a user sees and what
-// they show before the user has ever chosen (Knock answers 404 for a user it
-// doesn't know yet).
+// app/lib/notification-kinds.ts. /settings uses this list to decide which
+// toggles a user sees and what they show before the user has ever chosen
+// (Knock answers 404 for a user it doesn't know yet).
 
-export type NotificationCategory =
-  | "refund-requests"
-  | "my-refunds"
-  | "seat-claims"
-  | "enrollment"
-  | "discussion-questions"
-  | "discussion-replies";
+export const notificationCategorySchema = z.enum([
+  "refund-requests",
+  "my-refunds",
+  "seat-claims",
+  "enrollment",
+  "discussion-questions",
+  "discussion-replies",
+]);
+
+export type NotificationCategory = z.infer<typeof notificationCategorySchema>;
 
 export type NotificationCategoryInfo = {
   key: NotificationCategory;
@@ -69,12 +73,13 @@ export const notificationCategories: NotificationCategoryInfo[] = [
   },
 ];
 
-export const notificationCategoryKeys = notificationCategories.map(
-  (category) => category.key
-) as [NotificationCategory, ...NotificationCategory[]];
-
 /** What a user has chosen. A missing category means they haven't chosen. */
-export type CategoryPreferences = Partial<Record<NotificationCategory, boolean>>;
+export const categoryPreferencesSchema = z.record(
+  notificationCategorySchema,
+  z.boolean()
+);
+
+export type CategoryPreferences = z.infer<typeof categoryPreferencesSchema>;
 
 export type NotificationSetting = {
   category: NotificationCategory;

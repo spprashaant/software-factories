@@ -309,5 +309,16 @@ describe("category preferences", () => {
         "my-refunds": false,
       });
     });
+
+    it("ignores categories Cadence doesn't know", async () => {
+      const transport = knockAnswering(200, {
+        id: "default",
+        categories: { "spike-probe": false, "seat-claims": false },
+      });
+
+      expect(await transport.readPreferences(5)).toEqual({
+        "seat-claims": false,
+      });
+    });
   });
 });

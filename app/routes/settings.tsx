@@ -19,7 +19,7 @@ import { formatPrice } from "~/lib/utils";
 import { listRefundRequestsForBuyer } from "~/lib/refunds.server";
 import { defaultTransport } from "~/lib/notifications.server";
 import {
-  notificationCategoryKeys,
+  notificationCategorySchema,
   notificationSettingsFor,
   type CategoryPreferences,
   type NotificationSetting,
@@ -33,7 +33,7 @@ const settingsSchema = z.discriminatedUnion("intent", [
   }),
   z.object({
     intent: z.literal("set-notification-category"),
-    category: z.enum(notificationCategoryKeys),
+    category: notificationCategorySchema,
     enabled: z.enum(["true", "false"]).transform((value) => value === "true"),
   }),
 ]);

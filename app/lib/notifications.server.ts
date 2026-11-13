@@ -3,6 +3,8 @@ import { join } from "node:path";
 import Knock, { NotFoundError } from "@knocklabs/node";
 import { knockEnv } from "~/lib/knock.server";
 import {
+  categoryPreferencesSchema,
+  notificationCategorySchema,
   receivesCategory,
   type CategoryPreferences,
   type NotificationCategory,
@@ -111,11 +113,12 @@ export function knockTransport(
           KNOCK_PREFERENCE_SET
         );
         const preferences: CategoryPreferences = {};
-        for (const [category, setting] of Object.entries(
-          set.categories ?? {}
-        )) {
+        for (const [key, setting] of Object.entries(set.categories ?? {})) {
+          // Knock may hold categories this Cadence doesn't know: skip them.
+          const category = notificationCategorySchema.safeParse(key);
+          if (!category.success) continue;
           // A settings object (per-channel or conditions) still means "on".
-          preferences[category as NotificationCategory] = setting !== false;
+          preferences[category.data] = setting !== false;
         }
         return preferences;
       } catch (error) {
@@ -204,7 +207,9 @@ export function localFileTransport(
     async readPreferences(userId) {
       const file = preferencesFile(userId);
       if (!existsSync(file)) return {};
-      return JSON.parse(readFileSync(file, "utf8"));
+      return categoryPreferencesSchema.parse(
+        JSON.parse(readFileSync(file, "utf8"))
+      );
     },
 
     async writePreference(userId, category, enabled) {
