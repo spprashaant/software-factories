@@ -16,8 +16,22 @@ import type { NotificationCategory } from "~/lib/notification-categories";
 // kind lives here: its category, how its feed row reads and where it links,
 // its icon, and which detail line the feed looks up for it.
 //
-// Adding a kind: add it here, return it from a service, and set its workflow
-// up in Knock.
+// Adding a kind: add it to the list below and to NOTIFICATION_KINDS (the
+// type checker insists), return it from a service, and set its workflow up
+// in Knock.
+
+export const notificationKindSchema = z.enum([
+  "refund-opened",
+  "refund-approved",
+  "refund-declined",
+  "seat-claimed",
+  "enrollment",
+  "discussion-question",
+  "discussion-reply",
+  "refund-received",
+]);
+
+export type NotificationKind = z.infer<typeof notificationKindSchema>;
 
 export type TitlePart = { text: string; bold: boolean };
 
@@ -95,7 +109,7 @@ function discussion(
   };
 }
 
-export const NOTIFICATION_KINDS = {
+export const NOTIFICATION_KINDS: Record<NotificationKind, KindDefinition> = {
   "refund-opened": {
     category: "refund-requests",
     icon: Receipt,
@@ -162,13 +176,7 @@ export const NOTIFICATION_KINDS = {
       url: purchaseUrl(data),
     }),
   },
-} satisfies Record<string, KindDefinition>;
-
-export type NotificationKind = keyof typeof NOTIFICATION_KINDS;
-
-export const notificationKindSchema = z.enum(
-  Object.keys(NOTIFICATION_KINDS) as [NotificationKind, ...NotificationKind[]]
-);
+};
 
 export function categoryOf(kind: NotificationKind): NotificationCategory {
   return NOTIFICATION_KINDS[kind].category;
