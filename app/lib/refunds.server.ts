@@ -15,8 +15,10 @@ import {
   videoWatchEvents,
   LessonProgressStatus,
   RefundStatus,
+  UserRole,
 } from "~/db/schema";
 import { formatPrice } from "~/lib/utils";
+import type { Notification } from "~/lib/notifications.server";
 import {
   REFUND_COMPLETION_LIMIT,
   REFUND_WATCH_LIMIT_SECONDS,
@@ -351,7 +353,13 @@ export function getRefundOffer(
 export type Email = { to: string; subject: string; body: string };
 
 export type RaiseResult =
-  | { ok: true; refundRequestId: number; kind: PurchaseKind; email: Email }
+  | {
+      ok: true;
+      refundRequestId: number;
+      kind: PurchaseKind;
+      email: Email;
+      notifications: Notification[];
+    }
   | Failure;
 
 export function raiseRefundRequest(
@@ -387,10 +395,15 @@ export function raiseRefundRequest(
     .returning()
     .get();
 
+  const kind = kindOf(getSeats(db, purchase.id));
+
   return {
     ok: true,
     refundRequestId: refundRequest.id,
-    kind: kindOf(getSeats(db, purchase.id)),
+    kind,
+    notifications: [
+      refundOpenedNotification(db, refundRequest.id, buyer, course, kind),
+    ].filter((notification) => notification !== null),
     email: {
       to: buyer.email,
       subject: `Refund requested — ${course.title}`,
@@ -405,6 +418,43 @@ export function raiseRefundRequest(
         "— The Cadence team",
       ].join("\n"),
     },
+  };
+}
+
+/**
+ * "{Buyer} asked for a refund on {course}", to every Platform Admin but the
+ * buyer. Admins are looked up now, so a role change counts from the next
+ * Refund Request. The reason stays in Cadence and is read on /admin/refunds.
+ */
+function refundOpenedNotification(
+  db: Queryable,
+  refundRequestId: number,
+  buyer: { id: number; name: string },
+  course: { id: number; title: string },
+  purchaseKind: PurchaseKind
+): Notification | null {
+  const recipients = db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(eq(users.role, UserRole.Admin))
+    .orderBy(asc(users.id))
+    .all()
+    .filter((admin) => admin.id !== buyer.id);
+
+  if (recipients.length === 0) return null;
+
+  return {
+    kind: "refund-opened",
+    recipients,
+    actor: { id: buyer.id, name: buyer.name },
+    data: {
+      refundRequestId,
+      courseId: course.id,
+      courseTitle: course.title,
+      purchaseKind,
+    },
+    idempotencyKey: `refund-opened:${refundRequestId}`,
+    arrivesRead: false,
   };
 }
 
