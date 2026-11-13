@@ -6,6 +6,8 @@ import {
   Circle,
   GraduationCap,
   Inbox,
+  MessageCircleQuestion,
+  MessageSquareReply,
   Receipt,
   UserPlus,
   UsersRound,
@@ -438,6 +440,8 @@ const CATEGORY_ICONS: Record<NotificationCategory, LucideIcon> = {
   "my-refunds": Receipt,
   "seat-claims": UsersRound,
   enrollment: UserPlus,
+  "discussion-questions": MessageCircleQuestion,
+  "discussion-replies": MessageSquareReply,
 };
 
 function CategoryIcon({ item }: { item: FeedItem }) {
