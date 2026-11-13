@@ -2,11 +2,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Knock, { NotFoundError } from "@knocklabs/node";
 import { knockEnv } from "~/lib/knock.server";
-import type {
-  CategoryPreferences,
-  NotificationCategory,
+import {
+  receivesCategory,
+  type CategoryPreferences,
+  type NotificationCategory,
 } from "~/lib/notification-categories";
-import type { NotificationKind } from "~/lib/notification-kinds";
+import { categoryOf, type NotificationKind } from "~/lib/notification-kinds";
 
 // ─── Notifications ───
 // A Notification is a plain description that services return next to their
@@ -169,6 +170,24 @@ async function markRunSeenAndRead(
 }
 
 /**
+ * The Notification with only the recipients who receive its category, or
+ * null when nobody does. Knock does this itself for every trigger; the local
+ * transports do it here so local behaviour matches.
+ */
+async function forRecipientsWhoReceiveIt(
+  notification: Notification,
+  preferences: PreferenceStore
+): Promise<Notification | null> {
+  const category = categoryOf(notification.kind);
+  const recipients: NotificationPerson[] = [];
+  for (const recipient of notification.recipients) {
+    const chosen = await preferences.readPreferences(recipient.id);
+    if (receivesCategory(category, chosen)) recipients.push(recipient);
+  }
+  return recipients.length > 0 ? { ...notification, recipients } : null;
+}
+
+/**
  * Without a Knock key, Notifications go to `directory` and each user's
  * category preferences to `<preferencesDirectory>/<userId>.json`.
  */
@@ -181,31 +200,33 @@ export function localFileTransport(
   const preferencesFile = (userId: number) =>
     join(preferencesDirectory, `${userId}.json`);
 
-  const readPreferences = async (
-    userId: number
-  ): Promise<CategoryPreferences> => {
-    const file = preferencesFile(userId);
-    if (!existsSync(file)) return {};
-    return JSON.parse(readFileSync(file, "utf8"));
-  };
-
-  return {
-    readPreferences,
+  const store: PreferenceStore = {
+    async readPreferences(userId) {
+      const file = preferencesFile(userId);
+      if (!existsSync(file)) return {};
+      return JSON.parse(readFileSync(file, "utf8"));
+    },
 
     async writePreference(userId, category, enabled) {
-      const preferences = await readPreferences(userId);
+      const preferences = await store.readPreferences(userId);
       mkdirSync(preferencesDirectory, { recursive: true });
       writeFileSync(
         preferencesFile(userId),
         JSON.stringify({ ...preferences, [category]: enabled }, null, 2)
       );
     },
+  };
+
+  return {
+    ...store,
 
     async send(notification) {
+      const delivered = await forRecipientsWhoReceiveIt(notification, store);
+      if (!delivered) return;
       mkdirSync(directory, { recursive: true });
-      const key = notification.idempotencyKey.replace(/[^a-z0-9-]/gi, "-");
+      const key = delivered.idempotencyKey.replace(/[^a-z0-9-]/gi, "-");
       const file = join(directory, `${Date.now()}-${key}.json`);
-      writeFileSync(file, JSON.stringify(notification, null, 2));
+      writeFileSync(file, JSON.stringify(delivered, null, 2));
     },
   };
 }
@@ -215,8 +236,7 @@ export function recordingTransport(): NotificationTransport &
   PreferenceStore & { sent: Notification[] } {
   const sent: Notification[] = [];
   const preferences = new Map<number, CategoryPreferences>();
-  return {
-    sent,
+  const store: PreferenceStore = {
     async readPreferences(userId) {
       return { ...preferences.get(userId) };
     },
@@ -226,8 +246,13 @@ export function recordingTransport(): NotificationTransport &
         [category]: enabled,
       });
     },
+  };
+  return {
+    ...store,
+    sent,
     async send(notification) {
-      sent.push(notification);
+      const delivered = await forRecipientsWhoReceiveIt(notification, store);
+      if (delivered) sent.push(delivered);
     },
   };
 }

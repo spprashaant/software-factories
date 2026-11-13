@@ -82,6 +82,20 @@ export type NotificationSetting = {
   enabled: boolean;
 };
 
+/** Whether a user gets this category: what they chose, else its default. */
+export function receivesCategory(
+  category: NotificationCategory,
+  preferences: CategoryPreferences
+): boolean {
+  return preferences[category] ?? categoryInfo(category).defaultEnabled;
+}
+
+function categoryInfo(key: NotificationCategory): NotificationCategoryInfo {
+  const info = notificationCategories.find((category) => category.key === key);
+  if (!info) throw new Error(`Unknown notification category: ${key}`);
+  return info;
+}
+
 /** One toggle per category the role can receive, chosen value over default. */
 export function notificationSettingsFor(
   role: UserRole,

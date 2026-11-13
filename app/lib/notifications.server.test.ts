@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -55,7 +55,9 @@ describe("notify", () => {
       },
     };
 
-    await expect(notify([refundOpened], broken)).resolves.toHaveProperty("settled");
+    await expect(notify([refundOpened], broken)).resolves.toHaveProperty(
+      "settled"
+    );
   });
 
   it("still sends the rest when one Notification fails", async () => {
@@ -149,6 +151,84 @@ describe("notify", () => {
   });
 });
 
+describe("muted categories, without Knock", () => {
+  // Knock skips a recipient who muted the workflow's category. The recording
+  // and local-file transports do the same, so local behaviour matches.
+  function localFile() {
+    const directory = mkdtempSync(join(tmpdir(), "notifications-"));
+    const transport = localFileTransport(directory, {
+      preferencesDirectory: mkdtempSync(join(tmpdir(), "preferences-")),
+    });
+    const written = (): Notification[] =>
+      existsSync(directory)
+        ? readdirSync(directory).map((file) =>
+            JSON.parse(readFileSync(join(directory, file), "utf8"))
+          )
+        : [];
+    return { transport, written };
+  }
+
+  function recording() {
+    const transport = recordingTransport();
+    return { transport, written: () => transport.sent };
+  }
+
+  const receipt: Notification = {
+    kind: "refund-received",
+    recipients: [{ id: 1, name: "Liam Buyer" }],
+    actor: null,
+    data: { refundRequestId: 7 },
+    idempotencyKey: "refund-received:7",
+    arrivesRead: true,
+  };
+
+  const enrollment: Notification = {
+    kind: "enrollment",
+    recipients: [{ id: 9, name: "Ivy Instructor" }],
+    actor: { id: 1, name: "Liam Buyer" },
+    data: { enrollmentId: 5, courseId: 2, courseTitle: "Intro to TypeScript" },
+    idempotencyKey: "enrollment:5",
+    arrivesRead: false,
+  };
+
+  for (const [name, make] of Object.entries({
+    recording,
+    "local file": localFile,
+  })) {
+    describe(`over the ${name} transport`, () => {
+      it("sends nothing to a recipient who muted the category", async () => {
+        const { transport, written } = make();
+        await transport.writePreference(1, "my-refunds", false);
+
+        await notify([receipt], transport);
+
+        expect(written()).toEqual([]);
+      });
+
+      it("still sends to the recipients who didn't mute it", async () => {
+        const { transport, written } = make();
+        await transport.writePreference(3, "refund-requests", false);
+
+        await notify([refundOpened], transport);
+
+        expect(written().map((n) => n.recipients)).toEqual([
+          [{ id: 4, name: "Quinn Admin" }],
+        ]);
+      });
+
+      it("holds Enrollments back until the Instructor opts in", async () => {
+        const { transport, written } = make();
+
+        await notify([enrollment], transport);
+        expect(written()).toEqual([]);
+
+        await transport.writePreference(9, "enrollment", true);
+        await notify([enrollment], transport);
+        expect(written()).toEqual([enrollment]);
+      });
+    });
+  }
+});
 describe("category preferences", () => {
   const transports = {
     recording: () => recordingTransport(),
