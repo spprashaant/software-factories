@@ -16,7 +16,13 @@ import { knockEnv } from "~/lib/knock.server";
  * One row of the v1 catalogue. Each kind is also the key of the Knock
  * workflow that delivers it (see knock/workflows.ts).
  */
-export type NotificationKind = "refund-opened" | "seat-claimed" | "enrollment";
+export type NotificationKind =
+  | "refund-opened"
+  | "refund-received"
+  | "refund-approved"
+  | "refund-declined"
+  | "seat-claimed"
+  | "enrollment";
 
 export type NotificationPerson = { id: number; name: string };
 
@@ -47,8 +53,9 @@ export interface NotificationTransport {
  * Knock upserts recipients and actor inline from the trigger, which is the only
  * user sync: id is `String(user.id)` and only the name goes with it.
  *
- * TODO(row 8): "arrives read" should mark the recipient's new message seen and
- * read once the receipt Notification exists.
+ * For a Notification that arrives read, the transport then finds the messages
+ * the trigger made and marks them seen and read, so the badge never counts
+ * them. Knock creates messages asynchronously, so it looks a few times.
  */
 export function knockTransport(apiKey: string): NotificationTransport {
   const knock = new Knock({ apiKey, maxRetries: 0 });
@@ -59,7 +66,7 @@ export function knockTransport(apiKey: string): NotificationTransport {
 
   return {
     async send(notification) {
-      await knock.workflows.trigger(
+      const { workflow_run_id } = await knock.workflows.trigger(
         notification.kind,
         {
           recipients: notification.recipients.map(person),
@@ -68,8 +75,47 @@ export function knockTransport(apiKey: string): NotificationTransport {
         },
         { idempotencyKey: notification.idempotencyKey }
       );
+
+      if (notification.arrivesRead) {
+        await markRunSeenAndRead(knock, workflow_run_id, notification);
+      }
     },
   };
+}
+
+const ARRIVES_READ_ATTEMPTS = 5;
+const ARRIVES_READ_DELAY_MS = 300;
+
+async function markRunSeenAndRead(
+  knock: Knock,
+  workflowRunId: string,
+  notification: Notification
+) {
+  const pending = new Set(notification.recipients.map(({ id }) => String(id)));
+
+  for (let attempt = 0; attempt < ARRIVES_READ_ATTEMPTS; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, ARRIVES_READ_DELAY_MS));
+
+    for (const userId of [...pending]) {
+      const messageIds: string[] = [];
+      for await (const message of knock.users.listMessages(userId, {
+        workflow_run_id: workflowRunId,
+      })) {
+        if (message.id) messageIds.push(message.id);
+      }
+      if (messageIds.length === 0) continue;
+
+      await knock.messages.batch.markAsSeen({ message_ids: messageIds });
+      await knock.messages.batch.markAsRead({ message_ids: messageIds });
+      pending.delete(userId);
+    }
+
+    if (pending.size === 0) return;
+  }
+
+  throw new Error(
+    `trigger sent, but its message was not found to mark read (run ${workflowRunId})`
+  );
 }
 
 export function localFileTransport(directory: string): NotificationTransport {
