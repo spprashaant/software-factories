@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import { cn } from "~/lib/utils";
 import { UserRole } from "~/db/schema";
 import { UserAvatar } from "~/components/user-avatar";
+// PROTOTYPE, never merge: Notification Feed prototype slots
+import { SidebarHeaderSlot, SidebarNavSlot } from "~/components/prototype-notification-feed";
 import {
   BookOpen,
   ChartColumn,
@@ -140,9 +142,11 @@ export function Sidebar({
         <NavLink to="/" className="text-lg font-bold tracking-tight">
           Cadence
         </NavLink>
+        {currentUser && <SidebarHeaderSlot />}
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
+        {currentUser && <SidebarNavSlot />}
         {navItems
           .filter((item) => isVisible(item, currentUserRole))
           .map((item) => (
