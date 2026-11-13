@@ -55,7 +55,7 @@ describe("notify", () => {
       },
     };
 
-    await expect(notify([refundOpened], broken)).resolves.toBeUndefined();
+    await expect(notify([refundOpened], broken)).resolves.toHaveProperty("settled");
   });
 
   it("still sends the rest when one Notification fails", async () => {
@@ -75,6 +75,69 @@ describe("notify", () => {
     expect(recording.sent).toEqual([second]);
   });
 
+  it("finishes the arrives-read step after the send timeout, without waiting for it", async () => {
+    const steps: string[] = [];
+    const slowFollowUp: NotificationTransport = {
+      async send() {
+        steps.push("triggered");
+        return async () => {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          steps.push("marked read");
+        };
+      },
+    };
+
+    const { settled } = await notify([refundOpened], slowFollowUp, {
+      timeoutMs: 10,
+    });
+    expect(steps).toEqual(["triggered"]);
+
+    await settled;
+    expect(steps).toEqual(["triggered", "marked read"]);
+  });
+
+  it("does not throw when the arrives-read step fails", async () => {
+    const failingFollowUp: NotificationTransport = {
+      async send() {
+        return async () => {
+          throw new Error("Knock is down");
+        };
+      },
+    };
+
+    const { settled } = await notify([refundOpened], failingFollowUp);
+
+    await expect(settled).resolves.toBeUndefined();
+  });
+
+  it("over Knock, sends an arrives-read Notification with the trigger alone and leaves marking it read to the follow-up", async () => {
+    const requests: string[] = [];
+    const transport = knockTransport("sk_test", {
+      fetch: async (input) => {
+        requests.push(String(input));
+        return new Response(JSON.stringify({ workflow_run_id: "run_1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+    const receipt: Notification = {
+      ...refundOpened,
+      kind: "refund-received",
+      recipients: [{ id: 1, name: "Liam Buyer" }],
+      actor: null,
+      idempotencyKey: "refund-received:7",
+      arrivesRead: true,
+    };
+
+    const followUp = await transport.send(receipt);
+
+    expect(requests).toEqual([
+      "https://api.knock.app/v1/workflows/refund-received/trigger",
+    ]);
+    expect(followUp).toBeTypeOf("function");
+  });
+
   it("gives up on a transport that hangs", async () => {
     const hanging: NotificationTransport = {
       send: () => new Promise(() => {}),
@@ -82,7 +145,7 @@ describe("notify", () => {
 
     await expect(
       notify([refundOpened], hanging, { timeoutMs: 10 })
-    ).resolves.toBeUndefined();
+    ).resolves.toHaveProperty("settled");
   });
 });
 

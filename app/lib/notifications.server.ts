@@ -51,8 +51,15 @@ export type Notification = {
 
 // ─── Transports ───
 
+/**
+ * Work a transport still has to do once a Notification is sent, such as
+ * marking an arrives-read Notification read. `notify()` runs it after the
+ * send, outside the send's timeout and without holding up the action.
+ */
+export type FollowUp = () => Promise<void>;
+
 export interface NotificationTransport {
-  send(notification: Notification): Promise<void>;
+  send(notification: Notification): Promise<FollowUp | void>;
 }
 
 /**
@@ -76,9 +83,10 @@ const KNOCK_PREFERENCE_SET = "default";
  * Knock upserts recipients and actor inline from the trigger, which is the only
  * user sync: id is `String(user.id)` and only the name goes with it.
  *
- * For a Notification that arrives read, the transport then finds the messages
- * the trigger made and marks them seen and read, so the badge never counts
- * them. Knock creates messages asynchronously, so it looks a few times.
+ * For a Notification that arrives read, the send returns a follow-up that
+ * finds the messages the trigger made and marks them seen and read, so the
+ * badge never counts them. Knock creates messages asynchronously, so it looks
+ * a few times.
  */
 export function knockTransport(
   apiKey: string,
@@ -103,7 +111,7 @@ export function knockTransport(
       );
 
       if (notification.arrivesRead) {
-        await markRunSeenAndRead(knock, workflow_run_id, notification);
+        return () => markRunSeenAndRead(knock, workflow_run_id, notification);
       }
     },
 
@@ -247,8 +255,10 @@ export function defaultTransport(): NotificationTransport & PreferenceStore {
 // ─── Sending ───
 
 const DEFAULT_TIMEOUT_MS = 3000;
+/** Long enough for Knock to create the messages a follow-up marks read. */
+const DEFAULT_FOLLOW_UP_TIMEOUT_MS = 15_000;
 
-function withTimeout(promise: Promise<void>, timeoutMs: number) {
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(
@@ -259,26 +269,65 @@ function withTimeout(promise: Promise<void>, timeoutMs: number) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+function logFailure(notification: Notification, error: unknown) {
+  console.error(
+    `Notification ${notification.idempotencyKey} was not sent:`,
+    error
+  );
+}
+
+export type NotifyResult = {
+  /**
+   * Resolves once every follow-up (such as marking an arrives-read
+   * Notification read) has finished, failed or timed out. Never rejects.
+   * Actions don't wait for it.
+   */
+  settled: Promise<void>;
+};
+
 /**
  * Sends Notifications after the action's write has committed. Fail-open: a
  * Notification that errors or times out is logged and dropped, so the action
  * still succeeds. No retries.
+ *
+ * Each send gets the short `timeoutMs`. A transport's follow-up runs after
+ * it in the background with its own, longer timeout, so it is never cut off
+ * by the send's timeout and never holds up the action.
  */
 export async function notify(
   notifications: Notification[],
   transport: NotificationTransport = defaultTransport(),
-  { timeoutMs = DEFAULT_TIMEOUT_MS }: { timeoutMs?: number } = {}
-): Promise<void> {
-  await Promise.all(
+  {
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    followUpTimeoutMs = DEFAULT_FOLLOW_UP_TIMEOUT_MS,
+  }: { timeoutMs?: number; followUpTimeoutMs?: number } = {}
+): Promise<NotifyResult> {
+  const followUps = await Promise.all(
     notifications.map(async (notification) => {
       try {
-        await withTimeout(transport.send(notification), timeoutMs);
-      } catch (error) {
-        console.error(
-          `Notification ${notification.idempotencyKey} was not sent:`,
-          error
+        const followUp = await withTimeout(
+          transport.send(notification),
+          timeoutMs
         );
+        return followUp ? { notification, followUp } : null;
+      } catch (error) {
+        logFailure(notification, error);
+        return null;
       }
     })
   );
+
+  const settled = Promise.all(
+    followUps
+      .filter((pending) => pending !== null)
+      .map(async ({ notification, followUp }) => {
+        try {
+          await withTimeout(followUp(), followUpTimeoutMs);
+        } catch (error) {
+          logFailure(notification, error);
+        }
+      })
+  ).then(() => undefined);
+
+  return { settled };
 }
