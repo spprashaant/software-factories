@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { UserRole, courses, enrollments, purchases, users } from "~/db/schema";
 import { checkPppAccess } from "~/lib/ppp";
-import type { Db } from "~/lib/refunds.server";
+import type { Db } from "~/db/types";
 
 // ─── Course access, db-first ───
 // What a signed-in user may do with one course. `getAccess` (access.server.ts)

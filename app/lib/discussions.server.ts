@@ -5,7 +5,7 @@ import type {
   Notification,
   NotificationPerson,
 } from "~/lib/notifications.server";
-import type { Db } from "~/lib/refunds.server";
+import type { Db } from "~/db/types";
 
 // ─── Discussions ───
 // Posting a Discussion Question on a lesson, or a Discussion Reply to one.

@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { coupons, courses, enrollments, purchases, users } from "~/db/schema";
-import { getSeatAvailability, type Db } from "~/lib/refunds.server";
+import type { Db } from "~/db/types";
+import { getSeatAvailability } from "~/lib/refunds.server";
 import type {
   Notification,
   NotificationPerson,
