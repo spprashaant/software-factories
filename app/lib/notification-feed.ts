@@ -244,6 +244,133 @@ export function describeFeedItem(item: FeedItem): DescribedNotification | null {
   }
 }
 
+// ─── Excerpts and decision notes ───
+// Knock never holds text a person wrote. The drawer asks Cadence for the
+// Discussion excerpts and decision notes on a loaded page, in one request,
+// at render time (app/lib/feed-details.server.ts).
+
+export type CommentDetail =
+  | { status: "text"; text: string }
+  | { status: "removed" }
+  | { status: "unavailable" };
+
+/** Only the user who raised the Refund Request ever gets its note. */
+export type DecisionNoteDetail =
+  { status: "note"; text: string } | { status: "unavailable" };
+
+export type FeedDetails = {
+  comments: Record<number, CommentDetail>;
+  decisionNotes: Record<number, DecisionNoteDetail>;
+};
+
+export type FeedDetailIds = {
+  commentIds: number[];
+  refundRequestIds: number[];
+};
+
+export const FEED_DETAILS_URL = "/api/notification-details";
+const FEED_DETAILS_TIMEOUT_MS = 5_000;
+
+const DISCUSSION_KINDS = new Set(["discussion-question", "discussion-reply"]);
+const DECISION_KINDS = new Set(["refund-approved", "refund-declined"]);
+
+function idFrom(value: unknown): number | null {
+  const id = typeof value === "string" ? Number(value) : value;
+  return typeof id === "number" && Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function detailIds(items: FeedItem[]): FeedDetailIds {
+  const commentIds = new Set<number>();
+  const refundRequestIds = new Set<number>();
+  for (const item of items) {
+    if (DISCUSSION_KINDS.has(item.source.key)) {
+      const id = idFrom(item.data?.commentId);
+      if (id) commentIds.add(id);
+    } else if (DECISION_KINDS.has(item.source.key)) {
+      const id = idFrom(item.data?.refundRequestId);
+      if (id) refundRequestIds.add(id);
+    }
+  }
+  return {
+    commentIds: [...commentIds],
+    refundRequestIds: [...refundRequestIds],
+  };
+}
+
+export function emptyFeedDetails(): FeedDetails {
+  return { comments: {}, decisionNotes: {} };
+}
+
+const feedDetailsSchema = z.object({
+  comments: z.record(
+    z.discriminatedUnion("status", [
+      z.object({ status: z.literal("text"), text: z.string() }),
+      z.object({ status: z.literal("removed") }),
+      z.object({ status: z.literal("unavailable") }),
+    ])
+  ),
+  decisionNotes: z.record(
+    z.discriminatedUnion("status", [
+      z.object({ status: z.literal("note"), text: z.string() }),
+      z.object({ status: z.literal("unavailable") }),
+    ])
+  ),
+});
+
+/**
+ * The excerpts and decision notes for one loaded page, in a single request.
+ * Fail-open: an error, a timeout or a bad answer gives no details, never throws.
+ */
+export async function fetchFeedDetails(
+  items: FeedItem[]
+): Promise<FeedDetails> {
+  const ids = detailIds(items);
+  if (ids.commentIds.length === 0 && ids.refundRequestIds.length === 0) {
+    return emptyFeedDetails();
+  }
+  try {
+    const response = await fetch(FEED_DETAILS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(ids),
+      signal: AbortSignal.timeout(FEED_DETAILS_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(`Feed details request failed: ${response.status}`);
+    }
+    return feedDetailsSchema.parse(await response.json()) as FeedDetails;
+  } catch (error) {
+    console.error(error);
+    return emptyFeedDetails();
+  }
+}
+
+export type RowDetail =
+  | { kind: "quote"; text: string }
+  | { kind: "removed" }
+  | { kind: "note"; text: string };
+
+/** The excerpt or decision note line under a row, or null for none. */
+export function feedRowDetail(
+  item: FeedItem,
+  details: FeedDetails
+): RowDetail | null {
+  if (DISCUSSION_KINDS.has(item.source.key)) {
+    const id = idFrom(item.data?.commentId);
+    const comment = id ? details.comments[id] : undefined;
+    if (comment?.status === "text")
+      return { kind: "quote", text: comment.text };
+    if (comment?.status === "removed") return { kind: "removed" };
+    return null;
+  }
+  if (DECISION_KINDS.has(item.source.key)) {
+    const id = idFrom(item.data?.refundRequestId);
+    const note = id ? details.decisionNotes[id] : undefined;
+    return note?.status === "note" ? { kind: "note", text: note.text } : null;
+  }
+  return null;
+}
+
 export type FeedGroup = {
   label: "Today" | "This week" | "Older";
   items: FeedItem[];
