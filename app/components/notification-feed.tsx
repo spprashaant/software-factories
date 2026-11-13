@@ -7,8 +7,12 @@ import {
   GraduationCap,
   Inbox,
   Receipt,
+  UserPlus,
+  UsersRound,
   X,
+  type LucideIcon,
 } from "lucide-react";
+import type { NotificationCategory } from "../../knock/workflows";
 import { cn } from "~/lib/utils";
 import { UserAvatar } from "~/components/user-avatar";
 import {
@@ -428,13 +432,17 @@ function Pager({ feed }: { feed: Feed }) {
 }
 
 // One icon per workflow category (knock/workflows.ts). Add yours here.
-const CATEGORY_ICONS: Record<string, typeof Bell> = {
+const CATEGORY_ICONS: Record<NotificationCategory, LucideIcon> = {
   "refund-requests": Receipt,
+  "my-refunds": Receipt,
+  "seat-claims": UsersRound,
+  enrollment: UserPlus,
 };
 
 function CategoryIcon({ item }: { item: FeedItem }) {
   const category = item.source.categories?.[0];
-  const Icon = (category && CATEGORY_ICONS[category]) || Bell;
+  const Icon =
+    (category && CATEGORY_ICONS[category as NotificationCategory]) || Bell;
   return <Icon className="size-3.5" aria-hidden />;
 }
 
