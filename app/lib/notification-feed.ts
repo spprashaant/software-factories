@@ -1,4 +1,10 @@
+import type { LucideIcon } from "lucide-react";
 import { z } from "zod";
+import {
+  NOTIFICATION_KINDS,
+  notificationKindSchema,
+  type DescribedNotification,
+} from "~/lib/notification-kinds";
 
 // ─── The Notification Feed, browser side ───
 // The browser reads the signed-in user's feed straight from Knock's headless
@@ -23,11 +29,8 @@ const feedItemSchema = z.object({
   inserted_at: z.string(),
   seen_at: z.string().nullable(),
   read_at: z.string().nullable(),
-  // `categories` are the workflow's categories (knock/workflows.ts).
-  source: z.object({
-    key: z.string(),
-    categories: z.array(z.string()).optional(),
-  }),
+  // The workflow key, which is the Notification kind.
+  source: z.object({ key: notificationKindSchema }),
   data: z.record(z.unknown()).nullable(),
   actors: z.array(
     z.object({ id: z.string().optional(), name: z.string().nullish() })
@@ -35,7 +38,14 @@ const feedItemSchema = z.object({
 });
 
 const feedSchema = z.object({
-  entries: z.array(feedItemSchema),
+  // An entry this Cadence can't read, such as a kind it doesn't know yet, is
+  // left out rather than failing the whole page.
+  entries: z.array(z.unknown()).transform((entries) =>
+    entries.flatMap((entry) => {
+      const item = feedItemSchema.safeParse(entry);
+      return item.success ? [item.data] : [];
+    })
+  ),
   meta: z.object({
     unseen_count: z.number(),
     unread_count: z.number(),
@@ -138,110 +148,19 @@ export async function markAllRead(config: FeedConfig) {
 
 // ─── How a Notification reads ───
 
-export type TitlePart = { text: string; bold: boolean };
-
-export type DescribedNotification = {
-  title: TitlePart[];
-  /** Shown before the time on the row's meta line, e.g. the course. */
-  meta?: string;
-  url: string;
-};
-
-function text(value: unknown, fallback: string) {
-  return typeof value === "string" && value.length > 0 ? value : fallback;
-}
-
-/** Where a Purchase is managed: /team for a Team Licence, else /settings. */
-function purchaseUrl(purchaseKind: unknown) {
-  return purchaseKind === "team_licence" ? "/team" : "/settings";
-}
-
 /**
- * The row's title and where clicking it goes, worked out from the workflow
- * key and the Notification's data. Null for a kind this Cadence doesn't know.
+ * The row's title and where clicking it goes, worked out from the kind and
+ * the Notification's data (app/lib/notification-kinds.ts).
  */
-export function describeFeedItem(item: FeedItem): DescribedNotification | null {
-  const data = item.data ?? {};
-  const actor = text(item.actors[0]?.name, "Someone");
-  const course = text(data.courseTitle, "a course");
+export function describeFeedItem(item: FeedItem): DescribedNotification {
+  return NOTIFICATION_KINDS[item.source.key].describe({
+    data: item.data ?? {},
+    actorName: item.actors[0]?.name || "Someone",
+  });
+}
 
-  switch (item.source.key) {
-    case "refund-opened":
-      return {
-        title: [
-          { text: actor, bold: true },
-          { text: " asked for a refund on ", bold: false },
-          { text: course, bold: true },
-        ],
-        url: "/admin/refunds",
-      };
-    case "seat-claimed":
-      return {
-        title: [
-          { text: actor, bold: true },
-          { text: " claimed a Seat on ", bold: false },
-          { text: course, bold: true },
-        ],
-        url: "/team",
-      };
-    case "enrollment": {
-      const courseId = data.courseId;
-      return {
-        title: [
-          { text: actor, bold: true },
-          { text: " enrolled on ", bold: false },
-          { text: course, bold: true },
-        ],
-        url:
-          typeof courseId === "number" || typeof courseId === "string"
-            ? `/instructor/${courseId}/students`
-            : "/instructor",
-      };
-    }
-    case "refund-received":
-      return {
-        title: [
-          { text: "We've got your refund request for ", bold: false },
-          { text: course, bold: true },
-        ],
-        url: purchaseUrl(data.purchaseKind),
-      };
-    case "refund-approved":
-    case "refund-declined":
-      return {
-        title: [
-          { text: "Your refund for ", bold: false },
-          { text: course, bold: true },
-          {
-            text:
-              item.source.key === "refund-approved"
-                ? " was approved"
-                : " was declined",
-            bold: false,
-          },
-        ],
-        url: purchaseUrl(data.purchaseKind),
-      };
-    case "discussion-question":
-    case "discussion-reply":
-      return {
-        title: [
-          { text: actor, bold: true },
-          {
-            text:
-              item.source.key === "discussion-question"
-                ? " asked on "
-                : " replied on ",
-            bold: false,
-          },
-          { text: text(data.lessonTitle, "a lesson"), bold: true },
-        ],
-        meta: course,
-        url: `/courses/${encodeURIComponent(text(data.courseSlug, ""))}/lessons/${String(data.lessonId)}#comment-${String(data.commentId)}`,
-      };
-    default:
-      return null;
-  }
+export function feedItemIcon(item: FeedItem): LucideIcon {
+  return NOTIFICATION_KINDS[item.source.key].icon;
 }
 
 // ─── Excerpts and decision notes ───
@@ -249,19 +168,27 @@ export function describeFeedItem(item: FeedItem): DescribedNotification | null {
 // Discussion excerpts and decision notes on a loaded page, in one request,
 // at render time (app/lib/feed-details.server.ts).
 
-export type CommentDetail =
-  | { status: "text"; text: string }
-  | { status: "removed" }
-  | { status: "unavailable" };
+const commentDetailSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("text"), text: z.string() }),
+  z.object({ status: z.literal("removed") }),
+  z.object({ status: z.literal("unavailable") }),
+]);
 
 /** Only the user who raised the Refund Request ever gets its note. */
-export type DecisionNoteDetail =
-  { status: "note"; text: string } | { status: "unavailable" };
+const decisionNoteDetailSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("note"), text: z.string() }),
+  z.object({ status: z.literal("unavailable") }),
+]);
 
-export type FeedDetails = {
-  comments: Record<number, CommentDetail>;
-  decisionNotes: Record<number, DecisionNoteDetail>;
-};
+const feedDetailsSchema = z.object({
+  comments: z.record(commentDetailSchema),
+  decisionNotes: z.record(decisionNoteDetailSchema),
+});
+
+export type CommentDetail = z.infer<typeof commentDetailSchema>;
+export type DecisionNoteDetail = z.infer<typeof decisionNoteDetailSchema>;
+/** Keyed by comment id and Refund Request id. */
+export type FeedDetails = z.infer<typeof feedDetailsSchema>;
 
 export type FeedDetailIds = {
   commentIds: number[];
@@ -271,25 +198,30 @@ export type FeedDetailIds = {
 export const FEED_DETAILS_URL = "/api/notification-details";
 const FEED_DETAILS_TIMEOUT_MS = 5_000;
 
-const DISCUSSION_KINDS = new Set(["discussion-question", "discussion-reply"]);
-const DECISION_KINDS = new Set(["refund-approved", "refund-declined"]);
-
 function idFrom(value: unknown): number | null {
   const id = typeof value === "string" ? Number(value) : value;
   return typeof id === "number" && Number.isInteger(id) && id > 0 ? id : null;
+}
+
+/** The comment or Refund Request a row's detail line is about, if any. */
+function detailRef(
+  item: FeedItem
+): { source: "comment" | "decision-note"; id: number } | null {
+  const source = NOTIFICATION_KINDS[item.source.key].detail;
+  if (source === null) return null;
+  const id = idFrom(
+    source === "comment" ? item.data?.commentId : item.data?.refundRequestId
+  );
+  return id ? { source, id } : null;
 }
 
 function detailIds(items: FeedItem[]): FeedDetailIds {
   const commentIds = new Set<number>();
   const refundRequestIds = new Set<number>();
   for (const item of items) {
-    if (DISCUSSION_KINDS.has(item.source.key)) {
-      const id = idFrom(item.data?.commentId);
-      if (id) commentIds.add(id);
-    } else if (DECISION_KINDS.has(item.source.key)) {
-      const id = idFrom(item.data?.refundRequestId);
-      if (id) refundRequestIds.add(id);
-    }
+    const ref = detailRef(item);
+    if (ref?.source === "comment") commentIds.add(ref.id);
+    if (ref?.source === "decision-note") refundRequestIds.add(ref.id);
   }
   return {
     commentIds: [...commentIds],
@@ -300,22 +232,6 @@ function detailIds(items: FeedItem[]): FeedDetailIds {
 export function emptyFeedDetails(): FeedDetails {
   return { comments: {}, decisionNotes: {} };
 }
-
-const feedDetailsSchema = z.object({
-  comments: z.record(
-    z.discriminatedUnion("status", [
-      z.object({ status: z.literal("text"), text: z.string() }),
-      z.object({ status: z.literal("removed") }),
-      z.object({ status: z.literal("unavailable") }),
-    ])
-  ),
-  decisionNotes: z.record(
-    z.discriminatedUnion("status", [
-      z.object({ status: z.literal("note"), text: z.string() }),
-      z.object({ status: z.literal("unavailable") }),
-    ])
-  ),
-});
 
 /**
  * The excerpts and decision notes for one loaded page, in a single request.
@@ -338,7 +254,7 @@ export async function fetchFeedDetails(
     if (!response.ok) {
       throw new Error(`Feed details request failed: ${response.status}`);
     }
-    return feedDetailsSchema.parse(await response.json()) as FeedDetails;
+    return feedDetailsSchema.parse(await response.json());
   } catch (error) {
     console.error(error);
     return emptyFeedDetails();
@@ -355,17 +271,16 @@ export function feedRowDetail(
   item: FeedItem,
   details: FeedDetails
 ): RowDetail | null {
-  if (DISCUSSION_KINDS.has(item.source.key)) {
-    const id = idFrom(item.data?.commentId);
-    const comment = id ? details.comments[id] : undefined;
+  const ref = detailRef(item);
+  if (ref?.source === "comment") {
+    const comment = details.comments[ref.id];
     if (comment?.status === "text")
       return { kind: "quote", text: comment.text };
     if (comment?.status === "removed") return { kind: "removed" };
     return null;
   }
-  if (DECISION_KINDS.has(item.source.key)) {
-    const id = idFrom(item.data?.refundRequestId);
-    const note = id ? details.decisionNotes[id] : undefined;
+  if (ref?.source === "decision-note") {
+    const note = details.decisionNotes[ref.id];
     return note?.status === "note" ? { kind: "note", text: note.text } : null;
   }
   return null;
@@ -424,14 +339,4 @@ export function mergeFirstPage(
       !onFirstPage.has(item.id) && new Date(item.inserted_at).getTime() < cutoff
   );
   return [...firstPage, ...older];
-}
-
-export function relativeTime(iso: string, now: Date) {
-  const minutes = Math.round(
-    (now.getTime() - new Date(iso).getTime()) / 60_000
-  );
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (minutes < 60 * 24) return `${Math.round(minutes / 60)}h ago`;
-  return `${Math.round(minutes / 60 / 24)}d ago`;
 }

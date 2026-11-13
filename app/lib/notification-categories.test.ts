@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { UserRole } from "~/db/schema";
-import { workflows } from "../../knock/workflows";
-import {
-  notificationCategories,
-  notificationSettingsFor,
-} from "./notification-categories";
+import { notificationSettingsFor } from "./notification-categories";
 
 const keysFor = (role: UserRole) =>
   notificationSettingsFor(role, {}).map((setting) => setting.category);
@@ -72,14 +68,5 @@ describe("notificationSettingsFor", () => {
       "discussion-questions": true,
       "discussion-replies": false,
     });
-  });
-});
-
-describe("notificationCategories", () => {
-  it("covers the category of every Knock workflow", () => {
-    const keys = notificationCategories.map((category) => category.key);
-    for (const workflow of workflows) {
-      expect(keys).toContain(workflow.category);
-    }
   });
 });

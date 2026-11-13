@@ -6,6 +6,7 @@ import type {
   CategoryPreferences,
   NotificationCategory,
 } from "~/lib/notification-categories";
+import type { NotificationKind } from "~/lib/notification-kinds";
 
 // ─── Notifications ───
 // A Notification is a plain description that services return next to their
@@ -16,20 +17,6 @@ import type {
 // (local dev) each one is written to .outbox/notifications/ as a JSON file
 // instead, mirroring `sendEmail()` in mailer.server.ts.
 
-/**
- * One row of the v1 catalogue. Each kind is also the key of the Knock
- * workflow that delivers it (see knock/workflows.ts).
- */
-export type NotificationKind =
-  | "refund-opened"
-  | "refund-approved"
-  | "refund-declined"
-  | "seat-claimed"
-  | "enrollment"
-  | "discussion-question"
-  | "discussion-reply"
-  | "refund-received";
-
 export type NotificationPerson = { id: number; name: string };
 
 /**
@@ -39,6 +26,7 @@ export type NotificationPerson = { id: number; name: string };
 export type NotificationData = Record<string, string | number>;
 
 export type Notification = {
+  /** The catalogue row, which is also the Knock workflow key. */
   kind: NotificationKind;
   recipients: NotificationPerson[];
   actor: NotificationPerson | null;

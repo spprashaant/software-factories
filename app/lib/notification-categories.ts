@@ -1,9 +1,10 @@
 import { UserRole } from "~/db/schema";
 
 // ─── Notification categories ───
-// The code-side category list. Each key is also a Knock category, tagged on
-// the workflows in knock/workflows.ts, so this list must match the Knock
-// dashboard. /settings uses it to decide which toggles a user sees and what
+// The code-side category list. Each key is also a Knock category, tagged by
+// hand on the workflows in the Knock dashboard (docs/knock-setup.md), so this
+// list must match the dashboard. Which kind is in which category lives in
+// app/lib/notification-kinds.ts. /settings uses it to decide which toggles a user sees and what
 // they show before the user has ever chosen (Knock answers 404 for a user it
 // doesn't know yet).
 
