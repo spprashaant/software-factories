@@ -57,3 +57,19 @@ These can't be pushed from code:
 | Key             | Catalogue row            | Category          | Channel     |
 | --------------- | ------------------------ | ----------------- | ----------- |
 | `refund-opened` | 1, Refund Request opened | `refund-requests` | In-app feed |
+
+## Categories
+
+`/settings` reads and writes each user's `default` preference set (category
+keys only, `merge` strategy). The code-side list in
+`app/lib/notification-categories.ts` must match these keys and defaults.
+Without `KNOCK_API_KEY`, preferences go to `.outbox/preferences/<userId>.json`.
+
+| Key                    | Label                     | Who sees the toggle | Default |
+| ---------------------- | ------------------------- | ------------------- | ------- |
+| `refund-requests`      | Refund Requests to review | Platform Admins     | On      |
+| `my-refunds`           | Your refunds              | Students (buyers)   | On      |
+| `seat-claims`          | Seat claims               | Students (Team Admins) | On   |
+| `enrollment`           | Enrollments               | Instructors         | **Off** |
+| `discussion-questions` | Discussion Questions      | Instructors         | On      |
+| `discussion-replies`   | Discussion Replies        | Everyone            | On      |

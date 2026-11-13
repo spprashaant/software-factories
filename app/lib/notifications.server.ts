@@ -1,7 +1,11 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import Knock from "@knocklabs/node";
+import Knock, { NotFoundError } from "@knocklabs/node";
 import { knockEnv } from "~/lib/knock.server";
+import type {
+  CategoryPreferences,
+  NotificationCategory,
+} from "~/lib/notification-categories";
 
 // ─── Notifications ───
 // A Notification is a plain description that services return next to their
@@ -44,14 +48,34 @@ export interface NotificationTransport {
 }
 
 /**
+ * A user's category preferences (/settings). Reads return only what the user
+ * has chosen; `notificationSettingsFor()` fills in the defaults. A write
+ * changes one category and leaves the others as they were.
+ */
+export interface PreferenceStore {
+  readPreferences(userId: number): Promise<CategoryPreferences>;
+  writePreference(
+    userId: number,
+    category: NotificationCategory,
+    enabled: boolean
+  ): Promise<void>;
+}
+
+/** Knock's default preference set, which Notifications are checked against. */
+const KNOCK_PREFERENCE_SET = "default";
+
+/**
  * Knock upserts recipients and actor inline from the trigger, which is the only
  * user sync: id is `String(user.id)` and only the name goes with it.
  *
  * TODO(row 8): "arrives read" should mark the recipient's new message seen and
  * read once the receipt Notification exists.
  */
-export function knockTransport(apiKey: string): NotificationTransport {
-  const knock = new Knock({ apiKey, maxRetries: 0 });
+export function knockTransport(
+  apiKey: string,
+  { fetch }: { fetch?: typeof globalThis.fetch } = {}
+): NotificationTransport & PreferenceStore {
+  const knock = new Knock({ apiKey, maxRetries: 0, fetch });
   const person = ({ id, name }: NotificationPerson) => ({
     id: String(id),
     name,
@@ -69,11 +93,70 @@ export function knockTransport(apiKey: string): NotificationTransport {
         { idempotencyKey: notification.idempotencyKey }
       );
     },
+
+    async readPreferences(userId) {
+      try {
+        const set = await knock.users.getPreferences(
+          String(userId),
+          KNOCK_PREFERENCE_SET
+        );
+        const preferences: CategoryPreferences = {};
+        for (const [category, setting] of Object.entries(
+          set.categories ?? {}
+        )) {
+          // A settings object (per-channel or conditions) still means "on".
+          preferences[category as NotificationCategory] = setting !== false;
+        }
+        return preferences;
+      } catch (error) {
+        // Knock doesn't know the user until their first Notification.
+        if (error instanceof NotFoundError) return {};
+        throw error;
+      }
+    },
+
+    async writePreference(userId, category, enabled) {
+      await knock.users.setPreferences(String(userId), KNOCK_PREFERENCE_SET, {
+        __persistence_strategy__: "merge",
+        categories: { [category]: enabled },
+      });
+    },
   };
 }
 
-export function localFileTransport(directory: string): NotificationTransport {
+/**
+ * Without a Knock key, Notifications go to `directory` and each user's
+ * category preferences to `<preferencesDirectory>/<userId>.json`.
+ */
+export function localFileTransport(
+  directory: string,
+  {
+    preferencesDirectory = join(directory, "..", "preferences"),
+  }: { preferencesDirectory?: string } = {}
+): NotificationTransport & PreferenceStore {
+  const preferencesFile = (userId: number) =>
+    join(preferencesDirectory, `${userId}.json`);
+
+  const readPreferences = async (
+    userId: number
+  ): Promise<CategoryPreferences> => {
+    const file = preferencesFile(userId);
+    if (!existsSync(file)) return {};
+    return JSON.parse(readFileSync(file, "utf8"));
+  };
+
   return {
+    readPreferences,
+
+    async writePreference(userId, category, enabled) {
+      const preferences = await readPreferences(userId);
+      mkdirSync(preferencesDirectory, { recursive: true });
+      writeFileSync(
+        preferencesFile(userId),
+        JSON.stringify({ ...preferences, [category]: enabled }, null, 2)
+      );
+    },
+
     async send(notification) {
       mkdirSync(directory, { recursive: true });
       const key = notification.idempotencyKey.replace(/[^a-z0-9-]/gi, "-");
@@ -84,19 +167,29 @@ export function localFileTransport(directory: string): NotificationTransport {
 }
 
 /** Keeps what was sent in memory, for tests. */
-export function recordingTransport(): NotificationTransport & {
-  sent: Notification[];
-} {
+export function recordingTransport(): NotificationTransport &
+  PreferenceStore & { sent: Notification[] } {
   const sent: Notification[] = [];
+  const preferences = new Map<number, CategoryPreferences>();
   return {
     sent,
+    async readPreferences(userId) {
+      return { ...preferences.get(userId) };
+    },
+    async writePreference(userId, category, enabled) {
+      preferences.set(userId, {
+        ...preferences.get(userId),
+        [category]: enabled,
+      });
+    },
     async send(notification) {
       sent.push(notification);
     },
   };
 }
 
-function defaultTransport(): NotificationTransport {
+/** Knock when KNOCK_API_KEY is set, otherwise local files under .outbox/. */
+export function defaultTransport(): NotificationTransport & PreferenceStore {
   const { apiKey } = knockEnv();
   return apiKey
     ? knockTransport(apiKey)

@@ -17,11 +17,26 @@ import { db } from "~/db";
 import { eq } from "drizzle-orm";
 import { formatPrice } from "~/lib/utils";
 import { listRefundRequestsForBuyer } from "~/lib/refunds.server";
+import { defaultTransport } from "~/lib/notifications.server";
+import {
+  notificationCategoryKeys,
+  notificationSettingsFor,
+  type CategoryPreferences,
+  type NotificationSetting,
+} from "~/lib/notification-categories";
 
-const settingsSchema = z.object({
-  name: z.string().trim().min(1, "Name cannot be empty."),
-  bio: z.string().trim().optional(),
-});
+const settingsSchema = z.discriminatedUnion("intent", [
+  z.object({
+    intent: z.literal("update-profile"),
+    name: z.string().trim().min(1, "Name cannot be empty."),
+    bio: z.string().trim().optional(),
+  }),
+  z.object({
+    intent: z.literal("set-notification-category"),
+    category: z.enum(notificationCategoryKeys),
+    enabled: z.enum(["true", "false"]).transform((value) => value === "true"),
+  }),
+]);
 
 export function meta() {
   return [
@@ -51,7 +66,19 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const refundRequests = listRefundRequestsForBuyer(db, currentUserId);
 
+  let preferences: CategoryPreferences = {};
+  try {
+    preferences = await defaultTransport().readPreferences(currentUser.id);
+  } catch (error) {
+    // Show the defaults rather than break the page when Knock is unreachable.
+    console.error("Could not read notification preferences:", error);
+  }
+
   return {
+    notificationSettings: notificationSettingsFor(
+      currentUser.role,
+      preferences
+    ),
     user: {
       id: currentUser.id,
       name: currentUser.name,
@@ -86,6 +113,33 @@ export async function action({ request }: Route.ActionArgs) {
     return data({ errors: parsed.errors }, { status: 400 });
   }
 
+  if (parsed.data.intent === "set-notification-category") {
+    const { category, enabled } = parsed.data;
+    const receivable = notificationSettingsFor(currentUser.role, {}).some(
+      (setting) => setting.category === category
+    );
+    if (!receivable) {
+      return data(
+        { errors: { category: "You don't receive that category." } },
+        { status: 400 }
+      );
+    }
+    try {
+      await defaultTransport().writePreference(
+        currentUser.id,
+        category,
+        enabled
+      );
+    } catch (error) {
+      console.error("Could not save notification preference:", error);
+      return data(
+        { errors: { category: "Couldn't save that. Please try again." } },
+        { status: 502 }
+      );
+    }
+    return { notificationCategory: category, enabled };
+  }
+
   const { name, bio } = parsed.data;
 
   db
@@ -98,7 +152,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Settings({ loaderData }: Route.ComponentProps) {
-  const { user, refundRequests } = loaderData;
+  const { user, refundRequests, notificationSettings } = loaderData;
   const openCount = refundRequests.filter(
     (refundRequest) => refundRequest.status === RefundStatus.Open
   ).length;
@@ -139,6 +193,7 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
         </CardHeader>
         <CardContent>
           <fetcher.Form method="post" className="space-y-4">
+            <input type="hidden" name="intent" value="update-profile" />
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input
@@ -185,6 +240,20 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
               {fetcher.state !== "idle" ? "Saving..." : "Save Changes"}
             </Button>
           </fetcher.Form>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-8 max-w-md">
+        <CardHeader>
+          <h2 className="text-lg font-semibold">Notifications</h2>
+          <p className="text-sm text-muted-foreground">
+            Choose what shows up in your Notification Feed.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {notificationSettings.map((setting) => (
+            <NotificationToggle key={setting.category} setting={setting} />
+          ))}
         </CardContent>
       </Card>
 
@@ -236,6 +305,46 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
         </Card>
       )}
     </div>
+  );
+}
+
+function NotificationToggle({ setting }: { setting: NotificationSetting }) {
+  const fetcher = useFetcher();
+  const pending = fetcher.formData?.get("enabled");
+  const enabled = pending == null ? setting.enabled : pending === "true";
+  const id = `notification-${setting.category}`;
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.errors) {
+      const firstError = Object.values(fetcher.data.errors)[0] as
+        | string
+        | undefined;
+      if (firstError) toast.error(firstError);
+    }
+  }, [fetcher.state, fetcher.data]);
+
+  return (
+    <fetcher.Form method="post" className="flex items-center justify-between">
+      <input type="hidden" name="intent" value="set-notification-category" />
+      <input type="hidden" name="category" value={setting.category} />
+      <input type="hidden" name="enabled" value={String(!enabled)} />
+      <Label htmlFor={id}>{setting.label}</Label>
+      <button
+        id={id}
+        type="submit"
+        role="switch"
+        aria-checked={enabled}
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+          enabled ? "bg-primary" : "bg-muted"
+        }`}
+      >
+        <span
+          className={`inline-block size-5 rounded-full bg-background shadow transition-transform ${
+            enabled ? "translate-x-5" : "translate-x-0.5"
+          }`}
+        />
+      </button>
+    </fetcher.Form>
   );
 }
 
