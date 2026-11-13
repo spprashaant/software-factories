@@ -54,14 +54,16 @@ These can't be pushed from code:
 
 ## Workflows
 
-| Key               | Catalogue row                             | Category          | Channel     |
-| ----------------- | ----------------------------------------- | ----------------- | ----------- |
-| `refund-opened`   | 1, Refund Request opened                  | `refund-requests` | In-app feed |
-| `refund-received` | 8, Refund Request received (arrives read) | `my-refunds`      | In-app feed |
-| `refund-approved` | 2, Refund Request approved                | `my-refunds`      | In-app feed |
-| `refund-declined` | 3, Refund Request declined                | `my-refunds`      | In-app feed |
-| `seat-claimed`    | 4, Seat claimed                           | `seat-claims`     | In-app feed |
-| `enrollment`      | 5, Enrollment created                     | `enrollment`      | In-app feed |
+| Key                   | Catalogue row                             | Category               | Channel     |
+| --------------------- | ----------------------------------------- | ---------------------- | ----------- |
+| `refund-opened`       | 1, Refund Request opened                  | `refund-requests`      | In-app feed |
+| `refund-approved`     | 2, Refund Request approved                | `my-refunds`           | In-app feed |
+| `refund-declined`     | 3, Refund Request declined                | `my-refunds`           | In-app feed |
+| `seat-claimed`        | 4, Seat claimed                           | `seat-claims`          | In-app feed |
+| `enrollment`          | 5, Enrollment created                     | `enrollment`           | In-app feed |
+| `discussion-question` | 6, Discussion Question asked              | `discussion-questions` | In-app feed |
+| `discussion-reply`    | 7, Discussion Reply posted                | `discussion-replies`   | In-app feed |
+| `refund-received`     | 8, Refund Request received (arrives read) | `my-refunds`           | In-app feed |
 
 The `enrollment` category key is fixed: the environment default preference
 set (Development set; Production step 2 above) uses it to keep Enrollment

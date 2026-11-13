@@ -18,11 +18,13 @@ import { knockEnv } from "~/lib/knock.server";
  */
 export type NotificationKind =
   | "refund-opened"
-  | "refund-received"
   | "refund-approved"
   | "refund-declined"
   | "seat-claimed"
-  | "enrollment";
+  | "enrollment"
+  | "discussion-question"
+  | "discussion-reply"
+  | "refund-received";
 
 export type NotificationPerson = { id: number; name: string };
 

@@ -14,6 +14,7 @@ import {
   askDiscussionQuestion,
   replyToDiscussionQuestion,
 } from "~/lib/discussions.server";
+import { notify } from "~/lib/notifications.server";
 import { db } from "~/db";
 import {
   categories,
@@ -885,6 +886,8 @@ export async function action({ params, request }: Route.ActionArgs) {
         if (!posted.ok) {
           return { ok: false, error: posted.error };
         }
+        // The comment is already saved: notify() logs failures and never throws.
+        await notify(posted.notifications);
         return { ok: true };
       }
 

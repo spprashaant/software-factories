@@ -14,6 +14,7 @@ import { AlertTriangle, CheckCircle2, ExternalLink } from "lucide-react";
 import { cn, daysSince, formatRelativeTime } from "~/lib/utils";
 import { MAX_COMMENT_LENGTH } from "~/lib/comments";
 import { replyToDiscussionQuestion } from "~/lib/discussions.server";
+import { notify } from "~/lib/notifications.server";
 import { parseFormData } from "~/lib/validation";
 import { db } from "~/db";
 import {
@@ -177,6 +178,9 @@ export async function action({ request }: Route.ActionArgs) {
   if (!posted.ok) {
     return { ok: false, error: posted.error };
   }
+
+  // The reply is already saved: notify() logs failures and never throws.
+  await notify(posted.notifications);
 
   return { ok: true };
 }

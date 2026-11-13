@@ -15,7 +15,9 @@ export type NotificationCategory =
   | "my-refunds"
   | "seat-claims"
   // Fixed key: Knock's environment default preference set turns it off.
-  | "enrollment";
+  | "enrollment"
+  | "discussion-questions"
+  | "discussion-replies";
 
 export type KnockWorkflow = {
   key: NotificationKind;
@@ -35,6 +37,22 @@ export const workflows: KnockWorkflow[] = [
     actionUrl: "/admin/refunds",
   },
   {
+    key: "refund-approved",
+    name: "Refund Request approved",
+    category: "my-refunds",
+    markdownBody: "Your refund for **{{ data.courseTitle }}** was approved",
+    actionUrl:
+      "{% if data.purchaseKind == 'team_licence' %}/team{% else %}/settings{% endif %}",
+  },
+  {
+    key: "refund-declined",
+    name: "Refund Request declined",
+    category: "my-refunds",
+    markdownBody: "Your refund for **{{ data.courseTitle }}** was declined",
+    actionUrl:
+      "{% if data.purchaseKind == 'team_licence' %}/team{% else %}/settings{% endif %}",
+  },
+  {
     key: "seat-claimed",
     name: "Seat claimed",
     category: "seat-claims",
@@ -50,27 +68,29 @@ export const workflows: KnockWorkflow[] = [
     actionUrl: "/instructor/{{ data.courseId }}/students",
   },
   {
+    key: "discussion-question",
+    name: "Discussion Question asked",
+    category: "discussion-questions",
+    markdownBody:
+      "**{{ actor.name }}** asked on **{{ data.lessonTitle }}** in {{ data.courseTitle }}",
+    actionUrl:
+      "/courses/{{ data.courseSlug }}/lessons/{{ data.lessonId }}#comment-{{ data.commentId }}",
+  },
+  {
+    key: "discussion-reply",
+    name: "Discussion Reply posted",
+    category: "discussion-replies",
+    markdownBody:
+      "**{{ actor.name }}** replied on **{{ data.lessonTitle }}** in {{ data.courseTitle }}",
+    actionUrl:
+      "/courses/{{ data.courseSlug }}/lessons/{{ data.lessonId }}#comment-{{ data.commentId }}",
+  },
+  {
     key: "refund-received",
     name: "Refund Request received",
     category: "my-refunds",
     markdownBody:
       "We've got your refund request for **{{ data.courseTitle }}**",
-    actionUrl:
-      "{% if data.purchaseKind == 'team_licence' %}/team{% else %}/settings{% endif %}",
-  },
-  {
-    key: "refund-approved",
-    name: "Refund Request approved",
-    category: "my-refunds",
-    markdownBody: "Your refund for **{{ data.courseTitle }}** was approved",
-    actionUrl:
-      "{% if data.purchaseKind == 'team_licence' %}/team{% else %}/settings{% endif %}",
-  },
-  {
-    key: "refund-declined",
-    name: "Refund Request declined",
-    category: "my-refunds",
-    markdownBody: "Your refund for **{{ data.courseTitle }}** was declined",
     actionUrl:
       "{% if data.purchaseKind == 'team_licence' %}/team{% else %}/settings{% endif %}",
   },
