@@ -10,7 +10,12 @@ import type { NotificationKind } from "~/lib/notifications.server";
 // The feed renders its own titles (app/lib/notification-feed.ts), so the
 // template body here is what Knock's dashboard and previews show.
 
-export type NotificationCategory = "refund-requests";
+export type NotificationCategory =
+  | "refund-requests"
+  | "my-refunds"
+  | "seat-claims"
+  // Fixed key: Knock's environment default preference set turns it off.
+  | "enrollment";
 
 export type KnockWorkflow = {
   key: NotificationKind;
@@ -28,5 +33,45 @@ export const workflows: KnockWorkflow[] = [
     markdownBody:
       "**{{ actor.name }}** asked for a refund on **{{ data.courseTitle }}**",
     actionUrl: "/admin/refunds",
+  },
+  {
+    key: "seat-claimed",
+    name: "Seat claimed",
+    category: "seat-claims",
+    markdownBody:
+      "**{{ actor.name }}** claimed a Seat on **{{ data.courseTitle }}**",
+    actionUrl: "/team",
+  },
+  {
+    key: "enrollment",
+    name: "Enrollment created",
+    category: "enrollment",
+    markdownBody: "**{{ actor.name }}** enrolled on **{{ data.courseTitle }}**",
+    actionUrl: "/instructor/{{ data.courseId }}/students",
+  },
+  {
+    key: "refund-received",
+    name: "Refund Request received",
+    category: "my-refunds",
+    markdownBody:
+      "We've got your refund request for **{{ data.courseTitle }}**",
+    actionUrl:
+      "{% if data.purchaseKind == 'team_licence' %}/team{% else %}/settings{% endif %}",
+  },
+  {
+    key: "refund-approved",
+    name: "Refund Request approved",
+    category: "my-refunds",
+    markdownBody: "Your refund for **{{ data.courseTitle }}** was approved",
+    actionUrl:
+      "{% if data.purchaseKind == 'team_licence' %}/team{% else %}/settings{% endif %}",
+  },
+  {
+    key: "refund-declined",
+    name: "Refund Request declined",
+    category: "my-refunds",
+    markdownBody: "Your refund for **{{ data.courseTitle }}** was declined",
+    actionUrl:
+      "{% if data.purchaseKind == 'team_licence' %}/team{% else %}/settings{% endif %}",
   },
 ];

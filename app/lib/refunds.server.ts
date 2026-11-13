@@ -403,6 +403,7 @@ export function raiseRefundRequest(
     kind,
     notifications: [
       refundOpenedNotification(db, refundRequest.id, buyer, course, kind),
+      refundReceivedNotification(refundRequest.id, buyer, course, kind),
     ].filter((notification) => notification !== null),
     email: {
       to: buyer.email,
@@ -455,6 +456,32 @@ function refundOpenedNotification(
     },
     idempotencyKey: `refund-opened:${refundRequestId}`,
     arrivesRead: false,
+  };
+}
+
+/**
+ * "We've got your refund request for {course}", to the buyer who raised it.
+ * The one exception to "nobody is told about their own action": it is an
+ * in-app receipt, so it has no actor and arrives already read and seen.
+ */
+function refundReceivedNotification(
+  refundRequestId: number,
+  buyer: { id: number; name: string },
+  course: { id: number; title: string },
+  purchaseKind: PurchaseKind
+): Notification {
+  return {
+    kind: "refund-received",
+    recipients: [{ id: buyer.id, name: buyer.name }],
+    actor: null,
+    data: {
+      refundRequestId,
+      courseId: course.id,
+      courseTitle: course.title,
+      purchaseKind,
+    },
+    idempotencyKey: `refund-received:${refundRequestId}`,
+    arrivesRead: true,
   };
 }
 
@@ -618,7 +645,9 @@ export function listTeamLicences(db: Queryable, buyerId: number, now: Date) {
 
 // ─── Deciding a Refund Request ───
 
-export type DecisionResult = { ok: true; email: Email } | Failure;
+export type DecisionResult =
+  | { ok: true; email: Email; notifications: Notification[] }
+  | Failure;
 
 function findOpenRefundRequest(
   tx: Queryable,
@@ -730,6 +759,15 @@ export function approveRefundRequest(
     return {
       ok: true,
       email: buildDecisionEmail(tx, purchase, RefundStatus.Approved, note),
+      notifications: [
+        refundDecidedNotification(
+          tx,
+          refundRequestId,
+          purchase,
+          RefundStatus.Approved,
+          platformAdminId
+        ),
+      ],
     };
   });
 }
@@ -778,8 +816,59 @@ export function declineRefundRequest(
         RefundStatus.Declined,
         trimmedNote
       ),
+      notifications: [
+        refundDecidedNotification(
+          tx,
+          refundRequestId,
+          found.purchase,
+          RefundStatus.Declined,
+          platformAdminId
+        ),
+      ],
     };
   });
+}
+
+/**
+ * "Your refund for {course} was approved / declined", to the buyer, with the
+ * deciding Platform Admin as actor. The decision note stays in Cadence and is
+ * looked up when the feed renders.
+ */
+function refundDecidedNotification(
+  db: Queryable,
+  refundRequestId: number,
+  purchase: Purchase,
+  decision: RefundStatus.Approved | RefundStatus.Declined,
+  platformAdminId: number
+): Notification {
+  const person = (id: number) => {
+    const user = db
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(eq(users.id, id))
+      .get();
+    return user ?? { id, name: "" };
+  };
+  const course = db
+    .select({ title: courses.title })
+    .from(courses)
+    .where(eq(courses.id, purchase.courseId))
+    .get();
+
+  return {
+    kind:
+      decision === RefundStatus.Approved ? "refund-approved" : "refund-declined",
+    recipients: [person(purchase.userId)],
+    actor: person(platformAdminId),
+    data: {
+      refundRequestId,
+      courseId: purchase.courseId,
+      courseTitle: course?.title ?? "",
+      purchaseKind: kindOf(getSeats(db, purchase.id)),
+    },
+    idempotencyKey: `refund-decided:${refundRequestId}`,
+    arrivesRead: false,
+  };
 }
 
 /** The email the buyer gets once their Refund Request is decided. */
