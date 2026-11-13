@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   badgeLabel,
   describeFeedItem,
+  feedRowDetail,
   fetchFeed,
+  fetchFeedDetails,
   markAllRead,
   markAllSeen,
   markUnread,
@@ -252,5 +254,134 @@ describe("describeFeedItem for Discussions", () => {
       meta: "Intro to JS",
       url: "/courses/intro-js/lessons/3#comment-42",
     });
+  });
+});
+
+describe("fetchFeedDetails", () => {
+  function withId(id: string, key: string, data: Record<string, unknown>) {
+    return { ...feedItem(key, data), id };
+  }
+
+  const page = [
+    withId("a", "discussion-question", { ...discussionData, commentId: 42 }),
+    withId("b", "discussion-reply", { ...discussionData, commentId: 43 }),
+    withId("c", "refund-declined", { refundRequestId: 9 }),
+    withId("d", "refund-approved", { refundRequestId: 10 }),
+    withId("e", "refund-received", { refundRequestId: 9 }),
+    withId("f", "enrollment", { courseId: 1 }),
+  ];
+
+  it("asks Cadence once for every comment and decision on the loaded page", async () => {
+    const answer = {
+      comments: { 42: { status: "text", text: "Why?" } },
+      decisionNotes: {},
+    };
+    const requests = stubKnock(answer);
+
+    const details = await fetchFeedDetails(page);
+
+    expect(requests).toEqual([
+      {
+        url: "/api/notification-details",
+        method: "POST",
+        body: { commentIds: [42, 43], refundRequestIds: [9, 10] },
+      },
+    ]);
+    expect(details).toEqual(answer);
+  });
+
+  it("makes no request when nothing on the page has details", async () => {
+    const requests = stubKnock({});
+
+    const details = await fetchFeedDetails([page[5]]);
+
+    expect(requests).toEqual([]);
+    expect(details).toEqual({ comments: {}, decisionNotes: {} });
+  });
+
+  it("returns no details when the endpoint fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("boom", { status: 500 }))
+    );
+
+    expect(await fetchFeedDetails(page)).toEqual({
+      comments: {},
+      decisionNotes: {},
+    });
+  });
+
+  it("returns no details when the request throws", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("offline");
+      })
+    );
+
+    expect(await fetchFeedDetails(page)).toEqual({
+      comments: {},
+      decisionNotes: {},
+    });
+  });
+});
+
+describe("feedRowDetail", () => {
+  const details = {
+    comments: {
+      42: { status: "text" as const, text: "Why does this close over i?" },
+      43: { status: "removed" as const },
+      44: { status: "unavailable" as const },
+    },
+    decisionNotes: {
+      9: { status: "note" as const, text: "Outside the window." },
+      10: { status: "unavailable" as const },
+    },
+  };
+
+  function discussion(commentId: number) {
+    return feedItem("discussion-reply", { ...discussionData, commentId });
+  }
+
+  it("quotes a Discussion comment's current text", () => {
+    expect(feedRowDetail(discussion(42), details)).toEqual({
+      kind: "quote",
+      text: "Why does this close over i?",
+    });
+  });
+
+  it("says a removed comment was removed", () => {
+    expect(feedRowDetail(discussion(43), details)).toEqual({
+      kind: "removed",
+    });
+  });
+
+  it("shows nothing for an unavailable or missing comment", () => {
+    expect(feedRowDetail(discussion(44), details)).toBeNull();
+    expect(feedRowDetail(discussion(45), details)).toBeNull();
+  });
+
+  it("shows the decision note on approved and declined rows", () => {
+    expect(
+      feedRowDetail(
+        feedItem("refund-declined", { refundRequestId: 9 }),
+        details
+      )
+    ).toEqual({ kind: "note", text: "Outside the window." });
+    expect(
+      feedRowDetail(
+        feedItem("refund-approved", { refundRequestId: 10 }),
+        details
+      )
+    ).toBeNull();
+  });
+
+  it("shows nothing on other kinds", () => {
+    expect(
+      feedRowDetail(
+        feedItem("refund-received", { refundRequestId: 9 }),
+        details
+      )
+    ).toBeNull();
   });
 });

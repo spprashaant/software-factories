@@ -20,7 +20,10 @@ import { UserAvatar } from "~/components/user-avatar";
 import {
   badgeLabel,
   describeFeedItem,
+  emptyFeedDetails,
+  feedRowDetail,
   fetchFeed,
+  fetchFeedDetails,
   groupFeedItems,
   markAllRead,
   markAllSeen,
@@ -29,6 +32,7 @@ import {
   mergeFirstPage,
   relativeTime,
   type FeedConfig,
+  type FeedDetails,
   type FeedItem,
   type FeedMeta,
   type FeedTab,
@@ -59,10 +63,21 @@ function useFeed(config: FeedConfig) {
   const [meta, setMeta] = useState<FeedMeta>(EMPTY_META);
   const [after, setAfter] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Excerpts and decision notes, read from Cadence once per loaded page.
+  const [details, setDetails] = useState<FeedDetails>(emptyFeedDetails);
   // Older pages loaded on this tab, so a refresh merges instead of replacing.
   const loadedOlder = useRef(false);
   // Bumped on every tab switch, so a slow response for the old tab is dropped.
   const generation = useRef(0);
+
+  // Fail-open: rows without details still render their title and link.
+  const loadDetails = useCallback(async (items: FeedItem[]) => {
+    const page = await fetchFeedDetails(items);
+    setDetails((known) => ({
+      comments: { ...known.comments, ...page.comments },
+      decisionNotes: { ...known.decisionNotes, ...page.decisionNotes },
+    }));
+  }, []);
 
   const refresh = useCallback(async () => {
     const asked = generation.current;
@@ -70,6 +85,7 @@ function useFeed(config: FeedConfig) {
       const page = await fetchFeed(config, { status: tab });
       if (asked !== generation.current) return;
       setMeta(page.meta);
+      loadDetails(page.entries);
       if (loadedOlder.current) {
         setEntries((loaded) => mergeFirstPage(loaded, page.entries));
       } else {
@@ -80,7 +96,7 @@ function useFeed(config: FeedConfig) {
       // The feed is a side panel: a failed read leaves the bell as it was.
       console.error(error);
     }
-  }, [config, tab]);
+  }, [config, tab, loadDetails]);
 
   const loadMore = useCallback(async () => {
     if (!after || loadingMore) return;
@@ -90,6 +106,7 @@ function useFeed(config: FeedConfig) {
       const page = await fetchFeed(config, { status: tab, after });
       if (asked !== generation.current) return;
       loadedOlder.current = true;
+      loadDetails(page.entries);
       setEntries((loaded) => {
         const ids = new Set(loaded.map((item) => item.id));
         return [...loaded, ...page.entries.filter((item) => !ids.has(item.id))];
@@ -101,7 +118,7 @@ function useFeed(config: FeedConfig) {
     } finally {
       setLoadingMore(false);
     }
-  }, [config, tab, after, loadingMore]);
+  }, [config, tab, after, loadingMore, loadDetails]);
 
   // A new tab starts from its first page.
   useEffect(() => {
@@ -181,6 +198,7 @@ function useFeed(config: FeedConfig) {
     tab,
     setTab,
     entries,
+    details,
     meta,
     hasMore: after !== null,
     loadingMore,
@@ -326,6 +344,7 @@ function NotificationDrawer({
                       <FeedRow
                         key={item.id}
                         item={item}
+                        details={feed.details}
                         now={now}
                         onOpen={(url) => {
                           onClose();
@@ -349,11 +368,13 @@ function NotificationDrawer({
 
 function FeedRow({
   item,
+  details,
   now,
   onOpen,
   onToggleRead,
 }: {
   item: FeedItem;
+  details: FeedDetails;
   now: Date;
   onOpen: (url: string) => void;
   onToggleRead: () => void;
@@ -361,6 +382,7 @@ function FeedRow({
   const described = describeFeedItem(item);
   if (!described) return null;
   const unread = !item.read_at;
+  const detail = feedRowDetail(item, details);
 
   return (
     <li
@@ -389,6 +411,21 @@ function FeedRow({
             )
           )}
         </button>
+        {detail?.kind === "quote" && (
+          <blockquote className="mt-1 line-clamp-2 border-l-2 pl-2 text-sm text-muted-foreground">
+            {detail.text}
+          </blockquote>
+        )}
+        {detail?.kind === "removed" && (
+          <p className="mt-1 border-l-2 pl-2 text-sm italic text-muted-foreground">
+            This comment was removed
+          </p>
+        )}
+        {detail?.kind === "note" && (
+          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+            {detail.text}
+          </p>
+        )}
         <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
           <CategoryIcon item={item} />
           {described.meta && <span>{described.meta} ·</span>}
