@@ -39,6 +39,7 @@ import { resolveCountry } from "~/lib/country.server";
 import { calculatePppPrice, getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
 import { parseFormData, parseParams } from "~/lib/validation";
 import { makeIndividualPurchase } from "~/lib/enrollments.server";
+import { notify } from "~/lib/notifications.server";
 
 function getCourseBySlug(slug: string) {
   return db.select().from(courses).where(eq(courses.slug, slug)).get();
@@ -340,6 +341,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     if (!bought.ok) {
       throw redirect(`/courses/${slug}`);
     }
+    await notify(bought.notifications);
     throw redirect(`/courses/${slug}/welcome`);
   }
 
