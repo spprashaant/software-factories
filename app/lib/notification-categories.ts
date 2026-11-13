@@ -19,7 +19,10 @@ export type NotificationCategoryInfo = {
   key: NotificationCategory;
   /** Shown on /settings, in glossary wording. */
   label: string;
-  /** Roles that can receive it. Buyers and Team Admins are Students. */
+  /**
+   * Roles that can receive it. Anyone can buy, so anyone can be a buyer or a
+   * Team Admin and receive "Your refunds" and "Seat claims".
+   */
   roles: UserRole[];
   defaultEnabled: boolean;
 };
@@ -36,13 +39,13 @@ export const notificationCategories: NotificationCategoryInfo[] = [
   {
     key: "my-refunds",
     label: "Your refunds",
-    roles: [UserRole.Student],
+    roles: everyone,
     defaultEnabled: true,
   },
   {
     key: "seat-claims",
     label: "Seat claims",
-    roles: [UserRole.Student],
+    roles: everyone,
     defaultEnabled: true,
   },
   {
