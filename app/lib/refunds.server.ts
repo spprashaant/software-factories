@@ -759,15 +759,13 @@ export function approveRefundRequest(
     return {
       ok: true,
       email: buildDecisionEmail(tx, purchase, RefundStatus.Approved, note),
-      notifications: [
-        refundDecidedNotification(
-          tx,
-          refundRequestId,
-          purchase,
-          RefundStatus.Approved,
-          platformAdminId
-        ),
-      ],
+      notifications: refundDecidedNotifications(
+        tx,
+        refundRequestId,
+        purchase,
+        RefundStatus.Approved,
+        platformAdminId
+      ),
     };
   });
 }
@@ -816,31 +814,32 @@ export function declineRefundRequest(
         RefundStatus.Declined,
         trimmedNote
       ),
-      notifications: [
-        refundDecidedNotification(
-          tx,
-          refundRequestId,
-          found.purchase,
-          RefundStatus.Declined,
-          platformAdminId
-        ),
-      ],
+      notifications: refundDecidedNotifications(
+        tx,
+        refundRequestId,
+        found.purchase,
+        RefundStatus.Declined,
+        platformAdminId
+      ),
     };
   });
 }
 
 /**
  * "Your refund for {course} was approved / declined", to the buyer, with the
- * deciding Platform Admin as actor. The decision note stays in Cadence and is
- * looked up when the feed renders.
+ * deciding Platform Admin as actor. None when a Platform Admin decides their
+ * own Refund Request. The decision note stays in Cadence and is looked up
+ * when the feed renders.
  */
-function refundDecidedNotification(
+function refundDecidedNotifications(
   db: Queryable,
   refundRequestId: number,
   purchase: Purchase,
   decision: RefundStatus.Approved | RefundStatus.Declined,
   platformAdminId: number
-): Notification {
+): Notification[] {
+  if (purchase.userId === platformAdminId) return [];
+
   const person = (id: number) => {
     const user = db
       .select({ id: users.id, name: users.name })
@@ -855,20 +854,24 @@ function refundDecidedNotification(
     .where(eq(courses.id, purchase.courseId))
     .get();
 
-  return {
-    kind:
-      decision === RefundStatus.Approved ? "refund-approved" : "refund-declined",
-    recipients: [person(purchase.userId)],
-    actor: person(platformAdminId),
-    data: {
-      refundRequestId,
-      courseId: purchase.courseId,
-      courseTitle: course?.title ?? "",
-      purchaseKind: kindOf(getSeats(db, purchase.id)),
+  return [
+    {
+      kind:
+        decision === RefundStatus.Approved
+          ? "refund-approved"
+          : "refund-declined",
+      recipients: [person(purchase.userId)],
+      actor: person(platformAdminId),
+      data: {
+        refundRequestId,
+        courseId: purchase.courseId,
+        courseTitle: course?.title ?? "",
+        purchaseKind: kindOf(getSeats(db, purchase.id)),
+      },
+      idempotencyKey: `refund-decided:${refundRequestId}`,
+      arrivesRead: false,
     },
-    idempotencyKey: `refund-decided:${refundRequestId}`,
-    arrivesRead: false,
-  };
+  ];
 }
 
 /** The email the buyer gets once their Refund Request is decided. */
