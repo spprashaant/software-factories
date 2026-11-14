@@ -9,7 +9,7 @@ import { formatRelativeTime } from "~/lib/utils";
 
 export function meta() {
   return [
-    { title: "Saved — Cadence" },
+    { title: "Bookmarks and Notes — Cadence" },
     { name: "description", content: "Your bookmarks and notes" },
   ];
 }
@@ -17,20 +17,19 @@ export function meta() {
 export async function loader({ request }: Route.LoaderArgs) {
   const userId = await requireUserId(request);
 
-  // Only the signed-in Student's own rows: nobody else's Bookmarks or Notes.
   const savedBookmarks = listBookmarks(db, userId);
   const savedNotes = listNotes(db, userId);
 
   return { savedBookmarks, savedNotes };
 }
 
-export default function Saved({ loaderData }: Route.ComponentProps) {
+export default function BookmarksAndNotes({ loaderData }: Route.ComponentProps) {
   const { savedBookmarks, savedNotes } = loaderData;
 
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">Saved</h1>
+        <h1 className="text-2xl font-bold">Bookmarks and Notes</h1>
         <p className="text-sm text-muted-foreground">
           The lessons you flagged, and what you wrote about them.
         </p>

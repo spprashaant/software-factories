@@ -2,28 +2,17 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "~/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { bookmarks, courses, lessons, modules, notes } from "~/db/schema";
-import { MAX_NOTE_LENGTH, MIN_NOTE_LENGTH } from "~/lib/notes";
-
-// ─── Bookmarks and Notes ───
-// A Student's own flag on a Lesson, and their own writing about it. See
-// GLOSSARY.md. Both are private to the Student: nothing here takes a second
-// user id, and no Instructor or Platform Admin view may read Note bodies.
-//
-// The one-per-Student-per-Lesson rule is held by unique indexes on both
-// tables, so the writes below lean on the database rather than a read first.
-//
-// Every function takes the database first, so tests can hand in an in-memory
-// one. Uses positional parameters (project convention).
+import { asPlainText, type PlainText } from "~/lib/text";
 
 export type Db = BetterSQLite3Database<typeof schema>;
+
+export const MAX_NOTE_LENGTH = 2000;
 
 const bookmarkOf = (userId: number, lessonId: number) =>
   and(eq(bookmarks.userId, userId), eq(bookmarks.lessonId, lessonId));
 
 const noteOf = (userId: number, lessonId: number) =>
   and(eq(notes.userId, userId), eq(notes.lessonId, lessonId));
-
-// ─── Bookmarks ───
 
 export function isBookmarked(db: Db, userId: number, lessonId: number) {
   return !!db
@@ -33,7 +22,6 @@ export function isBookmarked(db: Db, userId: number, lessonId: number) {
     .get();
 }
 
-/** Removes the Bookmark if there is one, adds it if not. Returns whether the Lesson is now bookmarked. */
 export function toggleBookmark(
   db: Db,
   userId: number,
@@ -54,9 +42,7 @@ export function toggleBookmark(
   return true;
 }
 
-// ─── Notes ───
-
-export type LessonNote = { body: string; updatedAt: string };
+export type LessonNote = { body: PlainText; updatedAt: string };
 
 export function getNote(
   db: Db,
@@ -76,11 +62,6 @@ export type SaveNoteResult =
   | { ok: true; note: LessonNote }
   | { ok: false; error: string };
 
-/**
- * Creates the Student's Note on a Lesson, or replaces its body and moves its
- * "last edited" time on. The body is trimmed and refused, never truncated,
- * when it is over the cap.
- */
 export function saveNote(
   db: Db,
   userId: number,
@@ -88,8 +69,8 @@ export function saveNote(
   body: string,
   now: Date
 ): SaveNoteResult {
-  const trimmed = body.trim();
-  if (trimmed.length < MIN_NOTE_LENGTH) {
+  const trimmed = asPlainText(body.trim());
+  if (trimmed.length === 0) {
     return { ok: false, error: "Write something before saving your note." };
   }
   if (trimmed.length > MAX_NOTE_LENGTH) {
@@ -119,8 +100,6 @@ export function saveNote(
   return { ok: true, note };
 }
 
-// ─── The Saved page ───
-
 const lessonRefColumns = {
   lessonId: lessons.id,
   lessonTitle: lessons.title,
@@ -128,7 +107,6 @@ const lessonRefColumns = {
   courseSlug: courses.slug,
 };
 
-/** The Student's Bookmarks, newest first, each with the Lesson and Course it belongs to. */
 export function listBookmarks(db: Db, userId: number) {
   return db
     .select({ id: bookmarks.id, createdAt: bookmarks.createdAt, ...lessonRefColumns })
@@ -141,7 +119,6 @@ export function listBookmarks(db: Db, userId: number) {
     .all();
 }
 
-/** The Student's Notes, most recently edited first, each with the Lesson and Course it belongs to. */
 export function listNotes(db: Db, userId: number) {
   return db
     .select({

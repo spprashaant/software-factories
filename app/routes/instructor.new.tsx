@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, redirect, useFetcher } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
+import { asMarkdown, type Markdown } from "~/lib/text";
 import type { Route } from "./+types/instructor.new";
 import { getCurrentUserId } from "~/lib/session";
 import { parseFormData } from "~/lib/validation";
@@ -47,7 +48,7 @@ function createCourse(
   title: string,
   slug: string,
   description: string,
-  salesCopy: string,
+  salesCopy: Markdown,
   instructorId: number,
   categoryId: number,
   coverImageUrl: string | null
@@ -75,7 +76,7 @@ function createCourse(
 const newCourseSchema = z.object({
   title: z.string().trim().min(1, "Title is required."),
   description: z.string().trim().min(1, "Description is required."),
-  salesCopy: z.string().trim().min(1, "Sales copy is required."),
+  salesCopy: z.string().trim().min(1, "Sales copy is required.").transform(asMarkdown),
   categoryId: z.string().min(1, "Category is required."),
   coverImageUrl: z.string().trim().optional(),
 });

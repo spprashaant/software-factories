@@ -64,7 +64,7 @@ import { data, isRouteErrorResponse } from "react-router";
 import { z } from "zod";
 import { COUNTRIES } from "~/lib/ppp";
 import { parseFormData, parseParams } from "~/lib/validation";
-import { MAX_NOTE_LENGTH, MIN_NOTE_LENGTH } from "~/lib/notes";
+import { findLessonInCourse } from "~/lib/course-content.server";
 import {
   getNote,
   isBookmarked,
@@ -95,14 +95,7 @@ const editCommentSchema = z.object({
 });
 
 const saveNoteSchema = z.object({
-  body: z
-    .string()
-    .trim()
-    .min(MIN_NOTE_LENGTH, "Write something before saving your note.")
-    .max(
-      MAX_NOTE_LENGTH,
-      `A note must be ${MAX_NOTE_LENGTH.toLocaleString("en-US")} characters or fewer.`
-    ),
+  body: z.string(),
 });
 
 const deleteCommentSchema = z.object({
@@ -197,12 +190,8 @@ function getModuleById(id: number) {
   return db.select().from(modules).where(eq(modules.id, id)).get();
 }
 
-// Scopes a posted lessonId to the course in the URL, so a Lesson in another
-// Course can't be reached by posting to this route.
 function requireLessonInCourse(lessonId: number, courseId: number) {
-  const lesson = getLessonById(lessonId);
-  const mod = lesson ? getModuleById(lesson.moduleId) : undefined;
-  if (!mod || mod.courseId !== courseId) {
+  if (!findLessonInCourse(db, lessonId, courseId)) {
     throw data("Lesson not found in this course", { status: 404 });
   }
 }
@@ -722,8 +711,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     ? await renderThread(getLessonThread(lessonId))
     : [];
 
-  // The Student's own Bookmark and Note on this Lesson. Both follow the same
-  // content-access bar as the discussion, and a signed-out visitor gets neither.
   const canSave = canViewContent && currentUserId !== null;
   const bookmarked =
     canSave && currentUserId ? isBookmarked(db, currentUserId, lessonId) : false;
@@ -924,8 +911,6 @@ export async function action({ params, request }: Route.ActionArgs) {
     }
   }
 
-  // Bookmark and Note intents re-check access here, with the same check the
-  // comment intents use — loader guards don't protect actions.
   if (intent === "toggle-bookmark" || intent === "save-note") {
     await requireContentAccess(request, course.id);
     requireLessonInCourse(lessonId, course.id);
@@ -1173,7 +1158,6 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
             />
           )}
 
-          {/* Note, under the video */}
           {canSave && <LessonNote note={note} />}
 
           {/* Lesson Content */}
@@ -1355,7 +1339,6 @@ function LessonNote({ note }: { note: LessonNoteData | null }) {
 
         <fetcher.Form method="post" className="space-y-3">
           <input type="hidden" name="intent" value="save-note" />
-          {/* Plain text only — a Note is never rendered as Markdown. */}
           <Textarea
             name="body"
             rows={6}

@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createTestDb, seedBaseData } from "~/test/setup";
+import { createTestDb, seedBaseData, type TestDb } from "~/test/setup";
 import * as schema from "~/db/schema";
-import { UserRole } from "~/db/schema";
+import { createLesson, createModule } from "./course-content.server";
+import { createStudent } from "./users.server";
+import { renderMarkdown } from "./markdown.server";
 import {
   getNote,
   isBookmarked,
@@ -10,8 +12,6 @@ import {
   saveNote,
   toggleBookmark,
 } from "./saved.server";
-
-type TestDb = ReturnType<typeof createTestDb>;
 
 const NOW = new Date(2026, 9, 6, 12, 0, 0);
 
@@ -27,32 +27,14 @@ beforeEach(() => {
   db = createTestDb();
   base = seedBaseData(db);
 
-  const module = db
-    .insert(schema.modules)
-    .values({ courseId: base.course.id, title: "Basics", position: 1 })
-    .returning()
-    .get();
-
+  const module = createModule(db, base.course.id, "Basics", null);
   lessonIds = [1, 2, 3].map(
-    (position) =>
-      db
-        .insert(schema.lessons)
-        .values({ moduleId: module.id, title: `Lesson ${position}`, position })
-        .returning()
-        .get().id
+    (n) => createLesson(db, module.id, `Lesson ${n}`, null, null, null, null).id
   );
 });
 
 function addStudent(name: string) {
-  return db
-    .insert(schema.users)
-    .values({
-      name,
-      email: `${name.toLowerCase()}@example.com`,
-      role: UserRole.Student,
-    })
-    .returning()
-    .get();
+  return createStudent(db, name, `${name.toLowerCase()}@example.com`);
 }
 
 describe("bookmarking a Lesson", () => {
@@ -116,6 +98,15 @@ describe("saving a Note", () => {
     );
   });
 
+  it("is plain text that the Markdown renderer will not take", () => {
+    saveNote(db, base.user.id, lessonIds[0], "*not bold*", NOW);
+    const note = getNote(db, base.user.id, lessonIds[0]);
+
+    // @ts-expect-error a Note body is PlainText, never Markdown
+    const render = () => note && renderMarkdown(note.body);
+    expect(render).toBeTypeOf("function");
+  });
+
   it("accepts a Note of exactly 2,000 characters", () => {
     const result = saveNote(db, base.user.id, lessonIds[0], "a".repeat(2000), NOW);
 
@@ -137,7 +128,7 @@ describe("saving a Note", () => {
   });
 });
 
-describe("the Saved lists", () => {
+describe("the Bookmarks and Notes lists", () => {
   it("list only the Student's own Bookmarks, newest first, with their Lesson and Course", () => {
     const other = addStudent("Olivia");
     toggleBookmark(db, base.user.id, lessonIds[0], NOW);

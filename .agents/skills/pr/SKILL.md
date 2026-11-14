@@ -32,6 +32,10 @@ Use this template for writing the PR body:
 <optional: potential ramifications of merge>
 ```
 
+## Reading the diff
+
+Diff against the PR's own base: `git diff origin/<baseRefName>...HEAD`, with `baseRefName` from `gh pr view <n> --json baseRefName`. A PR's base is often not `main`. Use local `git diff` over `gh pr diff`: only the local diff honours `.gitattributes`, which collapses the drizzle snapshots.
+
 ## Sections
 
 Skip all preambles and keep prose brief. Use the user's domain language from `GLOSSARY.md`.

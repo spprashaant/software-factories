@@ -2,7 +2,7 @@ import { Form, Link, useActionData, useNavigation, useSearchParams } from "react
 import { redirect, data } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/signup";
-import { UserRole, users } from "~/db/schema";
+import { users } from "~/db/schema";
 import { setCurrentUserId, getCurrentUserId } from "~/lib/session";
 import { parseFormData } from "~/lib/validation";
 import { Button } from "~/components/ui/button";
@@ -12,6 +12,7 @@ import { db } from "~/db";
 import { eq } from "drizzle-orm";
 import { defaultNotifications } from "~/lib/notifications.server";
 import { syncUser } from "~/lib/notification-preferences.server";
+import { createStudent } from "~/lib/users.server";
 
 const signupSchema = z.object({
   name: z.string().trim().min(1, "Name is required."),
@@ -75,12 +76,7 @@ export async function action({ request, url }: Route.ActionArgs) {
     });
   }
 
-  // Create new user as student
-  const newUser = db
-    .insert(users)
-    .values({ name, email, role: UserRole.Student, avatarUrl: null })
-    .returning()
-    .get();
+  const newUser = createStudent(db, name, email);
   await syncUser(await defaultNotifications(), newUser);
   const cookie = await setCurrentUserId(request, newUser.id);
   throw redirect(destination, {

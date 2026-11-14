@@ -58,6 +58,8 @@ import {
 import { data, isRouteErrorResponse } from "react-router";
 import { z } from "zod";
 import { parseFormData, parseParams } from "~/lib/validation";
+import { asMarkdown, type Markdown } from "~/lib/text";
+import { createLesson, createModule } from "~/lib/course-content.server";
 
 function getUserById(id: number) {
   return db.select().from(users).where(eq(users.id, id)).get();
@@ -160,7 +162,7 @@ function updateCourseStatus(id: number, status: CourseStatus) {
     .get();
 }
 
-function updateCourseSalesCopy(id: number, salesCopy: string) {
+function updateCourseSalesCopy(id: number, salesCopy: Markdown) {
   if (salesCopy.trim().length === 0) {
     throw new Error("Sales copy cannot be empty");
   }
@@ -204,26 +206,6 @@ function getModulesByCourse(courseId: number) {
     .all();
 }
 
-function createModule(
-  courseId: number,
-  title: string,
-  position: number | null
-) {
-  const pos =
-    position ??
-    db
-      .select({ max: sql<number>`coalesce(max(${modules.position}), 0)` })
-      .from(modules)
-      .where(eq(modules.courseId, courseId))
-      .get()!.max + 1;
-
-  return db
-    .insert(modules)
-    .values({ courseId, title, position: pos })
-    .returning()
-    .get();
-}
-
 function updateModuleTitle(id: number, title: string) {
   return db
     .update(modules)
@@ -260,36 +242,6 @@ function getLessonsByModule(moduleId: number) {
     .where(eq(lessons.moduleId, moduleId))
     .orderBy(lessons.position)
     .all();
-}
-
-function createLesson(
-  moduleId: number,
-  title: string,
-  content: string | null,
-  videoUrl: string | null,
-  position: number | null,
-  durationMinutes: number | null
-) {
-  const pos =
-    position ??
-    db
-      .select({ max: sql<number>`coalesce(max(${lessons.position}), 0)` })
-      .from(lessons)
-      .where(eq(lessons.moduleId, moduleId))
-      .get()!.max + 1;
-
-  return db
-    .insert(lessons)
-    .values({
-      moduleId,
-      title,
-      content,
-      videoUrl,
-      position: pos,
-      durationMinutes,
-    })
-    .returning()
-    .get();
 }
 
 function updateLessonTitle(id: number, title: string) {
@@ -538,7 +490,7 @@ const courseEditorActionSchema = z.discriminatedUnion("intent", [
   }),
   z.object({
     intent: z.literal("update-sales-copy"),
-    salesCopy: z.string().trim().min(1, "Sales copy cannot be empty."),
+    salesCopy: z.string().trim().min(1, "Sales copy cannot be empty.").transform(asMarkdown),
   }),
 ]);
 
@@ -720,7 +672,7 @@ export async function action({ params, request }: Route.ActionArgs) {
   }
 
   if (intent === "add-module") {
-    createModule(courseId, parsed.data.title, null);
+    createModule(db, courseId, parsed.data.title, null);
     return { success: true, field: "module" };
   }
 
@@ -759,7 +711,7 @@ export async function action({ params, request }: Route.ActionArgs) {
         { status: 404 }
       );
     }
-    createLesson(moduleId, title, null, null, null, null);
+    createLesson(db, moduleId, title, null, null, null, null);
     return { success: true, field: "lesson" };
   }
 
@@ -1501,7 +1453,7 @@ export default function InstructorCourseEditor({
   const priceFetcher = useFetcher();
   const pppFetcher = useFetcher();
 
-  const [salesCopy, setSalesCopy] = useState(course.salesCopy);
+  const [salesCopy, setSalesCopy] = useState<string>(course.salesCopy);
   const salesCopyHasChanges = salesCopy !== course.salesCopy;
   const salesCopyIsEmpty = salesCopy.trim().length === 0;
 
