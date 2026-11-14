@@ -2070,6 +2070,41 @@ This course is still in draft while the cluster examples are rewritten against t
 
   console.log(`Created ${countRows(schema.lessonProgress)} lesson progress records.`);
 
+  // ─── Bookmarks and Notes ───
+  // Private to the Student who made them. Emma flags a couple of lessons to
+  // come back to and keeps notes on two of them.
+
+  db.insert(schema.bookmarks)
+    .values([
+      { userId: students[0].id, lessonId: course1LessonIds[4], createdAt: daysAgo(20) },
+      { userId: students[0].id, lessonId: course2LessonIds[3], createdAt: daysAgo(6) },
+      { userId: students[2].id, lessonId: course1LessonIds[1], createdAt: daysAgo(9) },
+    ])
+    .run();
+
+  db.insert(schema.notes)
+    .values([
+      {
+        userId: students[0].id,
+        lessonId: course1LessonIds[4],
+        body: "Re-watch the bit on generic constraints.\n- extends keyof T\n- why the default matters",
+        createdAt: daysAgo(20),
+        updatedAt: daysAgo(3),
+      },
+      {
+        userId: students[0].id,
+        lessonId: course2LessonIds[3],
+        body: "Try this against my own API before moving on.",
+        createdAt: daysAgo(6),
+        updatedAt: daysAgo(6),
+      },
+    ])
+    .run();
+
+  console.log(
+    `Created ${countRows(schema.bookmarks)} bookmarks and ${countRows(schema.notes)} notes.`
+  );
+
   // ─── Quiz Attempts ───
 
   // Helper to record a quiz attempt with answers
@@ -2849,6 +2884,9 @@ This course is still in draft while the cluster examples are rewritten against t
   console.log(`  Enrollments: ${countRows(schema.enrollments)}`);
   console.log(`  Course ratings: ${countRows(schema.courseRatings)}`);
   console.log(`  Lesson comments: ${countRows(schema.comments)}`);
+  console.log(
+    `  Bookmarks: ${countRows(schema.bookmarks)}, notes: ${countRows(schema.notes)}`
+  );
   console.log(
     `  Lesson progress: ${countRows(schema.lessonProgress)} (${countRows(schema.lessonProgress, eq(schema.lessonProgress.status, LessonProgressStatus.Completed))} completed)`
   );
