@@ -11,14 +11,14 @@ import type { NotificationCategory } from "~/lib/notification-categories";
 
 // ─── Notification kinds ───
 // One entry per row of the v1 catalogue. Each kind is also the key of the
-// Knock workflow that delivers it, tagged in the dashboard with the kind's
-// category (docs/knock-setup.md). Everything Cadence needs to know about a
+// Knock workflow that delivers it (knock/workflows.ts), tagged with the
+// kind's category. Everything Cadence needs to know about a
 // kind lives here: its category, how its feed row reads and where it links,
 // its icon, and which detail line the feed looks up for it.
 //
-// Adding a kind: add it to the list below and to NOTIFICATION_KINDS (the
-// type checker insists), return it from a service, and set its workflow up
-// in Knock.
+// Adding a kind: add it to the list below, to NOTIFICATION_KINDS and to
+// knock/workflows.ts (the type checker insists), return it from a service,
+// and run `npm run knock:push-workflows`.
 
 export const notificationKindSchema = z.enum([
   "refund-opened",

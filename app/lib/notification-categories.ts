@@ -2,9 +2,9 @@ import { z } from "zod";
 import { UserRole } from "~/db/schema";
 
 // ─── Notification categories ───
-// The code-side category list. Each key is also a Knock category, tagged by
-// hand on the workflows in the Knock dashboard (docs/knock-setup.md), so this
-// list must match the dashboard. Which kind is in which category lives in
+// The code-side category list. Each key is also a Knock category:
+// `npm run knock:push-workflows` adds it to Knock's catalog and tags the
+// workflows with it (knock/workflows.ts). Which kind is in which category lives in
 // app/lib/notification-kinds.ts. /settings uses this list to decide which
 // toggles a user sees and what they show before the user has ever chosen
 // (Knock answers 404 for a user it doesn't know yet).
