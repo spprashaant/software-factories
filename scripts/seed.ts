@@ -17,8 +17,12 @@ import {
 import { existsSync } from "fs";
 import { defaultNotifications } from "../app/lib/notifications.server";
 import { syncAllUsers } from "../app/lib/notification-preferences.server";
+import { asMarkdown, asPlainText } from "../app/lib/text";
 
 const __filename = fileURLToPath(import.meta.url);
+
+const md = (strings: TemplateStringsArray, ...values: unknown[]) =>
+  asMarkdown(strings.reduce((out, part, i) => out + part + (i < values.length ? String(values[i]) : ""), ""));
 const __dirname = path.dirname(__filename);
 const migrationsFolder = path.resolve(__dirname, "../drizzle");
 
@@ -72,6 +76,8 @@ async function seed() {
 
   // Drop and recreate tables for a clean seed
   sqlite.exec(`
+    DROP TABLE IF EXISTS bookmarks;
+    DROP TABLE IF EXISTS notes;
     DROP TABLE IF EXISTS comments;
     DROP TABLE IF EXISTS course_ratings;
     DROP TABLE IF EXISTS video_watch_events;
@@ -335,7 +341,7 @@ async function seed() {
           .values({
             moduleId: mod.id,
             title: lessonData.title,
-            content: lessonData.content ?? null,
+            content: lessonData.content == null ? null : asMarkdown(lessonData.content),
             videoUrl: lessonData.videoUrl ?? null,
             githubRepoUrl: lessonData.githubRepoUrl ?? null,
             position: li + 1,
@@ -360,7 +366,7 @@ async function seed() {
       slug: "introduction-to-typescript",
       description:
         "Master TypeScript from the ground up. Learn type annotations, interfaces, generics, and advanced patterns that will make your JavaScript code safer and more maintainable. Includes hands-on projects and real-world examples.",
-      salesCopy: `## Why TypeScript?
+      salesCopy: md`## Why TypeScript?
 
 If you've been writing JavaScript and wondering why your code breaks in production with cryptic "undefined is not a function" errors, TypeScript is the answer you've been looking for.
 
@@ -781,7 +787,7 @@ Practice by converting an existing JavaScript project to TypeScript. Start with 
       slug: "building-rest-apis-with-nodejs",
       description:
         "Learn to build production-ready REST APIs using Node.js and Express. Covers routing, middleware, authentication, database integration, error handling, testing, and deployment best practices.",
-      salesCopy: `## Build APIs That Actually Work in Production
+      salesCopy: md`## Build APIs That Actually Work in Production
 
 Most API tutorials teach you how to return JSON from an endpoint. This course teaches you how to build APIs that handle real traffic, real users, and real problems — the kind you'll face on the job.
 
@@ -1249,7 +1255,7 @@ You've completed the Building REST APIs course. You now have the skills to build
       slug: "design-systems-with-tailwind",
       description:
         "Build a design system that survives contact with a real product team. Tokens, component APIs, theming, and the discipline that keeps a system from rotting into a component graveyard.",
-      salesCopy: `## Design Systems That Survive
+      salesCopy: md`## Design Systems That Survive
 
 Most design systems die the same way: a beautiful component library nobody uses, drifting out of sync with the product it was meant to serve.
 
@@ -1377,7 +1383,7 @@ Frontend developers who have built components before and watched the collection 
       slug: "practical-data-visualisation",
       description:
         "Turn data into charts people can actually read. Chart selection, scales, colour, and the accessibility rules most dashboards break.",
-      salesCopy: `## Charts People Can Read
+      salesCopy: md`## Charts People Can Read
 
 A chart is an argument. This course is about making the argument clearly — picking the right encoding, scaling it honestly, and colouring it so everyone can read it.
 
@@ -1475,7 +1481,7 @@ Developers and analysts who produce charts for other people to act on.`,
       slug: "shipping-with-docker-and-kubernetes",
       description:
         "Containerise an application and run it on Kubernetes without cargo-culting a YAML file you do not understand.",
-      salesCopy: `## From Laptop to Cluster
+      salesCopy: md`## From Laptop to Cluster
 
 Containers made deployment reproducible and Kubernetes made it configurable. This course covers both without pretending either is simple.
 
@@ -2067,6 +2073,37 @@ This course is still in draft while the cluster examples are rewritten against t
   markInProgress(students[4].id, course1LessonIds[1]);
 
   console.log(`Created ${countRows(schema.lessonProgress)} lesson progress records.`);
+
+  db.insert(schema.bookmarks)
+    .values([
+      { userId: students[0].id, lessonId: course1LessonIds[4], createdAt: daysAgo(20) },
+      { userId: students[0].id, lessonId: course2LessonIds[3], createdAt: daysAgo(6) },
+      { userId: students[2].id, lessonId: course1LessonIds[1], createdAt: daysAgo(9) },
+    ])
+    .run();
+
+  db.insert(schema.notes)
+    .values([
+      {
+        userId: students[0].id,
+        lessonId: course1LessonIds[4],
+        body: asPlainText("Re-watch the bit on generic constraints.\n- extends keyof T\n- why the default matters"),
+        createdAt: daysAgo(20),
+        updatedAt: daysAgo(3),
+      },
+      {
+        userId: students[0].id,
+        lessonId: course2LessonIds[3],
+        body: asPlainText("Try this against my own API before moving on."),
+        createdAt: daysAgo(6),
+        updatedAt: daysAgo(6),
+      },
+    ])
+    .run();
+
+  console.log(
+    `Created ${countRows(schema.bookmarks)} bookmarks and ${countRows(schema.notes)} notes.`
+  );
 
   // ─── Quiz Attempts ───
 
@@ -2847,6 +2884,9 @@ This course is still in draft while the cluster examples are rewritten against t
   console.log(`  Enrollments: ${countRows(schema.enrollments)}`);
   console.log(`  Course ratings: ${countRows(schema.courseRatings)}`);
   console.log(`  Lesson comments: ${countRows(schema.comments)}`);
+  console.log(
+    `  Bookmarks: ${countRows(schema.bookmarks)}, notes: ${countRows(schema.notes)}`
+  );
   console.log(
     `  Lesson progress: ${countRows(schema.lessonProgress)} (${countRows(schema.lessonProgress, eq(schema.lessonProgress.status, LessonProgressStatus.Completed))} completed)`
   );
