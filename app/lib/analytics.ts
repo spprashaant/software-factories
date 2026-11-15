@@ -14,6 +14,13 @@ export const PLATFORM_FEE_RATE = 0.2;
 /** The same rate as a whole number, for labelling it on screen. */
 export const PLATFORM_FEE_PERCENT = PLATFORM_FEE_RATE * 100;
 
+/**
+ * How many calendar days after purchase a refund can still be asked for.
+ * Here rather than beside the refund-exposure query because the page states
+ * it in its copy, and the page cannot import a server module.
+ */
+export const REFUND_WINDOW_DAYS = 14;
+
 export type AnalyticsRange = "7d" | "30d" | "90d" | "all";
 
 /** The range control's options, in the order they are offered. */
@@ -46,9 +53,9 @@ const RANGE_DAYS: Record<Exclude<AnalyticsRange, "all">, number> = {
  * cutoff is inside the range. Lives here rather than in the service because
  * panels built on other services have to agree with it.
  */
-export function rangeStart(range: AnalyticsRange): string | null {
+export function rangeStart(range: AnalyticsRange, now: Date): string | null {
   if (range === "all") return null;
-  return new Date(Date.now() - RANGE_DAYS[range] * 86_400_000).toISOString();
+  return new Date(now.getTime() - RANGE_DAYS[range] * 86_400_000).toISOString();
 }
 
 const MONTHS = [
