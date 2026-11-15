@@ -36,3 +36,19 @@ first time the code changes.
 Test setup calls the module's own functions. When the function you need does
 not exist, add it to the module rather than inserting rows directly, so a
 change to how the module stores its data leaves its tests alone.
+
+## Import a module through its entry points
+
+Code outside a module in `app/modules/` imports only the files at the
+module's root, never anything in its `lib/` or `tests/`. The module's tests
+follow the same rule. A deep import ties the caller to code the module is free
+to rewrite. `npm run lint:boundaries` catches this. The rule is written here
+too so you know it before the lint fails.
+
+## Routes do not query the database
+
+`app/routes/instructor.analytics.tsx` does not import `~/db` or
+`drizzle-orm`. Its loader asks `~/modules/instructor-analytics` for the page
+and returns the result. A query in the route is behaviour that the module's
+tests never exercise. `npm run lint:boundaries` enforces this for the
+analytics route. Treat it as the rule for any route that a module serves.

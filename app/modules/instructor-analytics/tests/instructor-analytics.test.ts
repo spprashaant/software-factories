@@ -5,9 +5,9 @@ import * as schema from "~/db/schema";
 import { CourseStatus, LessonProgressStatus, UserRole } from "~/db/schema";
 import { markdown } from "~/lib/text";
 import {
-  getInstructorAnalytics,
+  createInstructorAnalytics,
   type AnalyticsViewer,
-} from "./instructor-analytics.server";
+} from "../index.server";
 
 // Local noon, like the refund tests: refund days are local calendar days.
 const NOW = new Date(2026, 9, 6, 12, 0, 0);
@@ -19,11 +19,13 @@ function daysBefore(days: number, from: Date = NOW) {
 }
 
 let db: TestDb;
+let service: ReturnType<typeof createInstructorAnalytics>;
 let base: ReturnType<typeof seedBaseData>;
 let userCount = 0;
 
 beforeEach(() => {
   db = createTestDb();
+  service = createInstructorAnalytics(db);
   base = seedBaseData(db);
   userCount = 0;
 });
@@ -135,7 +137,7 @@ function progress(
 }
 
 function analytics(viewer: AnalyticsViewer, query = "", now: Date = NOW) {
-  return getInstructorAnalytics(db, viewer, new URLSearchParams(query), now);
+  return service.get(viewer, new URLSearchParams(query), now);
 }
 
 const asInstructor = (id: number): AnalyticsViewer => ({

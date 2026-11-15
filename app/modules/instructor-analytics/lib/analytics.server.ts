@@ -51,7 +51,7 @@ import { getDiscountForCountry } from "~/lib/ppp";
 // params arrive raw: parsing them, and deciding what this viewer may see, is
 // part of the behaviour under test.
 
-type Db = BetterSQLite3Database<typeof schema>;
+export type Db = BetterSQLite3Database<typeof schema>;
 
 export type AnalyticsViewer = { userId: number; isAdmin: boolean };
 
@@ -815,7 +815,7 @@ export type RefundExposure = {
  * `now` is the only clock: every range start, chart bucket and refund "today"
  * is measured from it, so one request cannot straddle midnight.
  */
-export function getInstructorAnalytics(
+export function buildInstructorAnalytics(
   db: Db,
   viewer: AnalyticsViewer,
   params: URLSearchParams,
@@ -1111,4 +1111,4 @@ export function getInstructorAnalytics(
   };
 }
 
-export type InstructorAnalytics = ReturnType<typeof getInstructorAnalytics>;
+export type InstructorAnalytics = ReturnType<typeof buildInstructorAnalytics>;

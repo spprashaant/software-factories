@@ -2,9 +2,8 @@ import { Link, isRouteErrorResponse, useSearchParams } from "react-router";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import type { Route } from "./+types/instructor.analytics";
 import { requireInstructorOrAdmin } from "~/lib/access.server";
-import { db } from "~/db";
 import {
-  getInstructorAnalytics,
+  instructorAnalytics,
   type CourseCountryRevenue,
   type CourseFunnel,
   type CourseProgressSummary,
@@ -12,7 +11,7 @@ import {
   type QuizPassRate,
   type RefundExposure,
   type RevenueSeries,
-} from "~/lib/instructor-analytics.server";
+} from "~/modules/instructor-analytics/index.server";
 import {
   ANALYTICS_RANGES,
   PLATFORM_FEE_PERCENT,
@@ -65,8 +64,7 @@ export function meta() {
 }
 
 export async function loader({ request, url }: Route.LoaderArgs) {
-  return getInstructorAnalytics(
-    db,
+  return instructorAnalytics.get(
     await requireInstructorOrAdmin(request),
     url.searchParams,
     new Date()
