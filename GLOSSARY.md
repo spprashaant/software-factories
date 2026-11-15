@@ -35,6 +35,31 @@ A Student who has lost their Enrollment on a course but still has progress on it
 Seconds of video a Student has actually played in a course: the furthest point reached in each lesson, added up. Not lessons opened.
 _Avoid_: Viewed, Progress
 
+### Course Permissions
+
+**Course Permission**:
+Something a person may do on one course: Read Lessons, Edit the Course, Moderate, Record Progress, or Rate.
+_Avoid_: Access, Capability, Staff
+
+**Read Lessons**:
+The Course Permission to see a lesson's full body and video, and its Discussion.
+
+**Edit the Course**:
+The Course Permission to change a course's modules, lessons and quizzes.
+
+**Moderate**:
+The Course Permission to remove other people's Discussion Questions and Discussion Replies.
+
+**Record Progress**:
+The Course Permission to have Watched time, completed lessons and quiz results kept against your name.
+
+**Rate**:
+The Course Permission to give the course a star rating.
+
+**Lesson Preview**:
+What someone without permission to Read Lessons sees of a lesson: its title, its length, whether it has a video, and where it sits in the course outline.
+_Avoid_: Paywall, teaser, redacted lesson
+
 ### Discussions
 
 **Discussion Question**:
@@ -67,6 +92,27 @@ A Seat no Student has claimed yet.
 
 **Claimed Seat**:
 A Seat a Student has claimed. It belongs to that Student, so a Team Licence with any Claimed Seat can't be refunded.
+
+**Granting Purchase**:
+The Purchase a Student's Enrollment rests on: their own Individual Purchase of the course that hasn't been refunded or, failing that, the Team Licence behind their Claimed Seat.
+
+### Purchasing-Power Prices
+
+**Purchasing-Power Price**:
+A course price lowered to suit the buyer's country.
+_Avoid_: PPP price, regional discount, geo-pricing
+
+**Full-Price Country**:
+A country whose Purchasing-Power Price is the full price.
+_Avoid_: Tier 1
+
+**Purchase Country**:
+The country a Purchase was made from.
+_Avoid_: Buyer country, origin country
+
+**Country-Blocked**:
+An enrolled Student who can't take the course from where they are now, because their Granting Purchase was at a Purchasing-Power Price for another country.
+_Avoid_: PPP-blocked, geo-blocked, region-locked
 
 ### Refunds
 
