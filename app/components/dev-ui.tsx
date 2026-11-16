@@ -50,6 +50,7 @@ export function DevUI({
   const [minimized, setMinimized] = useState(false);
   const [open, setOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
+  const switchUserButtonRef = useRef<HTMLButtonElement>(null);
   const location = useLocation();
 
   useEffect(() => {
@@ -59,9 +60,18 @@ export function DevUI({
         setOpen(false);
       }
     }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        switchUserButtonRef.current?.focus();
+      }
+    }
     document.addEventListener("pointerdown", closeOnOutsidePointer);
-    return () =>
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
       document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
   }, [open]);
 
   if (minimized) {
@@ -112,6 +122,7 @@ export function DevUI({
 
         <div className="relative" ref={switcherRef}>
           <Button
+            ref={switchUserButtonRef}
             size="sm"
             variant="outline"
             className="w-full justify-between"
