@@ -19,7 +19,8 @@ Read CODING_STANDARDS.md.
   file, fix the type. The checks' configuration is a person's to change, and
   the workflow fails a run whose commits touch it. That covers
   `.oxlintrc.json` and its allowlists, `lint-rules/`, `biome.json`,
-  `tsconfig.json`, the test and mutation config, `scripts/check-*`, and the
+  `tsconfig.json`, the test and mutation config, `scripts/check-*`,
+  `CODING_STANDARDS.md`, `.agents/`, `.sandcastle/`, and the
   check scripts in `package.json`. Suppression comments (`oxlint-disable`,
   `@ts-ignore` and the like) fail the hook. If the ticket cannot be built
   without a check changing, stop and say so in the PR body.

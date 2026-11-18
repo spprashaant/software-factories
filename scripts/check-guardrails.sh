@@ -10,11 +10,15 @@
 # person's decision, made in a pull request of its own.
 #
 # One edit is allowed: a file leaving a legacy allowlist in .oxlintrc.json.
+#
+# The review reads CODING_STANDARDS.md, its skills and its prompt from the
+# branch, so those are guarded too: an agent that weakens them weakens its
+# own review.
 set -eu
 base=$1
 status=0
 
-guarded='^(\.dependency-cruiser\.cjs|biome\.json|tsconfig\.json|vitest\.config\.ts|stryker\.conf\.mjs|lint-rules/.*|scripts/pre-commit\.sh|scripts/check-[^/]+|scripts/mutate-diff\.ts|\.husky/.*|\.github/.*)$'
+guarded='^(CODING_STANDARDS\.md|\.agents/.*|\.claude/.*|\.sandcastle/.*|\.dependency-cruiser\.cjs|biome\.json|tsconfig\.json|vitest\.config\.ts|stryker\.conf\.mjs|lint-rules/.*|scripts/pre-commit\.sh|scripts/check-[^/]+|scripts/mutate-diff\.ts|\.husky/.*|\.github/.*)$'
 changed=$(git diff --name-only "$base" HEAD | grep -E "$guarded" || true)
 if [ -n "$changed" ]; then
   echo "::error::These commits change guardrail files:"
