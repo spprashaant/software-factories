@@ -17,6 +17,7 @@ run() {
 run lint-staged npx lint-staged --no-stash --no-hide-partially-staged
 run typecheck npm run --silent typecheck
 run boundaries npm run --silent lint:boundaries
+run exemptions npx tsx scripts/check-lint-exemptions.ts
 wait
 
 status=0
