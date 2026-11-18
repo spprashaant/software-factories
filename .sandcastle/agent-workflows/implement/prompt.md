@@ -20,10 +20,11 @@ Read CODING_STANDARDS.md.
   the workflow fails a run whose commits touch it. That covers
   `.oxlintrc.json` and its allowlists, `lint-rules/`, `biome.json`,
   `tsconfig.json`, the test and mutation config, `scripts/check-*`,
-  `CODING_STANDARDS.md`, `.agents/`, `.sandcastle/`, and the
-  check scripts in `package.json`. Suppression comments (`oxlint-disable`,
-  `@ts-ignore` and the like) fail the hook. If the ticket cannot be built
-  without a check changing, stop and say so in the PR body.
+  `CODING_STANDARDS.md`, `AGENTS.md`, `CLAUDE.md`, `app/modules/README.md`,
+  `.agents/`, `.sandcastle/`, and the check scripts in `package.json`.
+  Suppression comments (`oxlint-disable`, `@ts-ignore` and the like) fail the
+  hook. If the ticket cannot be built without a check changing, stop and say
+  so in the PR body.
 - Finish with at least one commit and a clean working tree. The workflow
   pushes and opens the pull request.
 - Leave `.github/` untouched.
