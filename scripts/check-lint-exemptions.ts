@@ -1,9 +1,10 @@
 /**
  * Fails a commit that widens a lint exemption.
  *
- * Two ways to get code past a check without fixing it:
+ * Three ways to get code past a check without fixing it:
  * - add a file to a `files` list under `overrides` in .oxlintrc.json, the
  *   legacy allowlists that switch a rule off;
+ * - turn a rule off or loosen it anywhere else in .oxlintrc.json;
  * - add a suppression comment (oxlint-disable, eslint-disable, biome-ignore,
  *   @ts-ignore, @ts-expect-error, @ts-nocheck).
  *
@@ -14,7 +15,10 @@
  *     npx tsx scripts/check-lint-exemptions.ts                # staged changes against HEAD
  *     npx tsx scripts/check-lint-exemptions.ts --range A B    # commits A..B (the agent workflows)
  *
- * With --range, the config may change only by a file leaving a list.
+ * Either way, the one edit .oxlintrc.json accepts is a file leaving a list.
+ * A person who means to change a rule does it in a pull request of its own,
+ * committing with --no-verify, and the agent workflows still fail any agent
+ * commit that does it.
  */
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -111,6 +115,25 @@ function configAt(revision: string): string {
   }
 }
 
+/** Everything the change does to get code past a check, one line each. */
+export function violations(
+  before: string,
+  after: string,
+  diff: string
+): string[] {
+  return [
+    ...(changesOutsideAllowlists(before, after)
+      ? [
+          `${CONFIG} changes outside its allowlists (a rule, an option, a new override or ignore pattern).`,
+        ]
+      : []),
+    ...addedExemptions(before, after).map(
+      (entry) => `${CONFIG} exempts a new file: ${entry}`
+    ),
+    ...addedSuppressions(diff).map((entry) => `suppression comment: ${entry}`),
+  ];
+}
+
 function main(args: string[]): void {
   const [from, to] = args[0] === "--range" ? args.slice(1, 3) : [];
   const range = from !== undefined && to !== undefined;
@@ -120,24 +143,10 @@ function main(args: string[]): void {
     ? git(["diff", "-U0", "--no-color", from, to])
     : git(["diff", "--cached", "-U0", "--no-color"]);
 
-  const exemptions = addedExemptions(before, after);
-  const suppressions = addedSuppressions(diff);
-  // A person may change the rules in a commit of their own; an agent's run
-  // (--range) may only shrink the allowlists.
-  const rewritten = range && changesOutsideAllowlists(before, after);
-  if (exemptions.length === 0 && suppressions.length === 0 && !rewritten) {
-    return;
-  }
+  const found = violations(before, after, diff);
+  if (found.length === 0) return;
 
-  if (rewritten) {
-    console.error(`  ${CONFIG} changes outside its allowlists.`);
-  }
-  for (const entry of exemptions) {
-    console.error(`  ${CONFIG} exempts a new file: ${entry}`);
-  }
-  for (const entry of suppressions) {
-    console.error(`  suppression comment: ${entry}`);
-  }
+  for (const entry of found) console.error(`  ${entry}`);
   console.error(`
 Lint exemptions only shrink. Change the code so the check passes:
 - a function over 50 lines: extract its parts into named functions or

@@ -3,6 +3,7 @@ import {
   addedExemptions,
   addedSuppressions,
   changesOutsideAllowlists,
+  violations,
 } from "./check-lint-exemptions";
 
 const config = (files: string[], extra = "") => `{
@@ -62,6 +63,47 @@ describe("changesOutsideAllowlists", () => {
     expect(
       changesOutsideAllowlists(config(["a.ts"]), config(["a.ts"], other))
     ).toBe(true);
+  });
+});
+
+describe("violations", () => {
+  const base = config(["a.ts", "b.ts"]);
+  const loosened = {
+    "a top-level rule's option": base.replace('["error", 3]', '["error", 6]'),
+    "a top-level rule turned off": base.replace('["error", 3]', '"off"'),
+    "a rule an override switches off": base.replace(
+      '"max-lines-per-function": "off"',
+      '"max-lines-per-function": "off", "max-params": "off"'
+    ),
+    "a new ignore pattern": base.replace(
+      '"rules": { "max-depth"',
+      '"ignorePatterns": ["app/**"], "rules": { "max-depth"'
+    ),
+  };
+
+  for (const [change, after] of Object.entries(loosened)) {
+    it(`fails ${change}`, () => {
+      expect(violations(base, after, "")).toContain(
+        ".oxlintrc.json changes outside its allowlists (a rule, an option, a new override or ignore pattern)."
+      );
+    });
+  }
+
+  it("passes a file leaving a list, and nothing else", () => {
+    expect(violations(base, config(["a.ts"]), "")).toEqual([]);
+  });
+
+  it("reports a joined file and a suppression together", () => {
+    expect(
+      violations(
+        base,
+        config(["a.ts", "b.ts", "c.ts"]),
+        diff("app/x.ts", "// @ts-ignore")
+      )
+    ).toEqual([
+      ".oxlintrc.json exempts a new file: c.ts (max-lines-per-function)",
+      "suppression comment: app/x.ts: // @ts-ignore",
+    ]);
   });
 });
 
