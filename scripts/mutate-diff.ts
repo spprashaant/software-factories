@@ -234,7 +234,8 @@ function parseArgs(argv: string[]): { base: string | null; paths: string[] } {
 
 /** Why a changed file is not mutated, or null when it is. */
 function skipReason(file: string): string | null {
-  if (!isSource(file)) return "not a .ts/.tsx source file";
+  if (/\.test\.tsx?$/.test(file)) return "a test file";
+  if (!isSource(file)) return "not a .ts/.tsx file";
   if (!isTested(file)) return `outside ${TESTED_ROOTS.join(", ")}`;
   return null;
 }
