@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useFetcher } from "react-router";
 import { toast } from "sonner";
 import { MessageSquare, Pencil, Reply, Trash2 } from "lucide-react";
@@ -77,7 +77,8 @@ function CommentForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetcher.state, fetcher.data, intent]);
 
-  const { tooLong, empty, label } = measureComment(body);
+  const { tooLong, empty, label, max } = measureComment(body);
+  const counterId = useId();
 
   return (
     <fetcher.Form method="post" className="space-y-2">
@@ -98,6 +99,8 @@ function CommentForm({
         // oxlint-disable-next-line jsx-a11y/no-autofocus -- focus moves to the form the person just opened
         autoFocus={autoFocus}
         aria-label={placeholder}
+        aria-describedby={counterId}
+        aria-invalid={tooLong || undefined}
       />
 
       <div className="flex items-center gap-3">
@@ -116,6 +119,9 @@ function CommentForm({
         )}
 
         <span
+          id={counterId}
+          aria-label={`${label} characters`}
+          title={`Comments can be up to ${max.toLocaleString("en")} characters`}
           className={cn(
             "ml-auto text-xs tabular-nums",
             tooLong ? "text-destructive" : "text-muted-foreground"
