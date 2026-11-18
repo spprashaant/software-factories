@@ -15,7 +15,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { UserAvatar } from "~/components/user-avatar";
 import { AlertTriangle, CheckCircle2, ExternalLink } from "lucide-react";
 import { cn, daysSince, formatRelativeTime } from "~/lib/utils";
-import { MAX_COMMENT_LENGTH } from "~/lib/comments";
+import { measureComment } from "~/modules/lesson-discussion";
 import { parseFormData } from "~/lib/validation";
 import type { Markdown } from "~/lib/text";
 import { db } from "~/db";
@@ -177,6 +177,7 @@ type Question = Awaited<ReturnType<typeof loader>>["questions"][number];
 function QuestionCard({ question }: { question: Question }) {
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const [body, setBody] = useState("");
+  const { tooLong, empty, label } = measureComment(body);
   const waitingDays = daysSince(question.createdAt);
   const stale = waitingDays >= STALE_AFTER_DAYS;
   const submitting = fetcher.state !== "idle";
@@ -265,23 +266,17 @@ function QuestionCard({ question }: { question: Question }) {
             <Button
               type="submit"
               size="sm"
-              disabled={
-                submitting ||
-                body.trim().length === 0 ||
-                body.length > MAX_COMMENT_LENGTH
-              }
+              disabled={submitting || empty || tooLong}
             >
               {submitting ? "Posting..." : "Post reply"}
             </Button>
             <span
               className={cn(
-                "ml-auto text-xs",
-                body.length > MAX_COMMENT_LENGTH
-                  ? "text-destructive"
-                  : "text-muted-foreground"
+                "ml-auto text-xs tabular-nums",
+                tooLong ? "text-destructive" : "text-muted-foreground"
               )}
             >
-              {body.length} / {MAX_COMMENT_LENGTH}
+              {label}
             </span>
           </div>
         </fetcher.Form>
