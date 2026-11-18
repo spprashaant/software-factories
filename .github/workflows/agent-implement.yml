@@ -208,6 +208,21 @@ jobs:
           fi
           git log --oneline "$BASE..HEAD"
 
+      - name: Check the agent left the guardrails alone
+        # The lint, type, test and hook configuration is a person's to change.
+        # The check runs from the base commit, so nothing the agent edited
+        # decides whether it passes. No token here: this runs repo code.
+        env:
+          BASE: ${{ steps.branch.outputs.base }}
+        run: |
+          set -euo pipefail
+          # A base from before the check existed has nothing to run.
+          if ! git cat-file -e "$BASE:scripts/check-guardrails.sh" 2>/dev/null; then
+            echo "::warning::The base has no scripts/check-guardrails.sh. Skipping."
+            exit 0
+          fi
+          git show "$BASE:scripts/check-guardrails.sh" | sh -s -- "$BASE"
+
       - name: Push
         env:
           GH_TOKEN: ${{ secrets.FACTORY_PAT }}
