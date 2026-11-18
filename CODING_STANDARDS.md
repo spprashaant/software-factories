@@ -107,6 +107,22 @@ const [items, setItems] = useState(rows);
 const count = items.length;
 ```
 
+## Moving a rule moves every caller
+
+When a change puts a rule behind a function (how a comment's length is
+counted, who may see a lesson), every place that applied the rule by hand
+calls the function in the same change. Search for the old shape: the
+constant, the expression, the condition. A caller left behind disagrees with
+the new one: the instructor's reply box once counted untrimmed text against
+`MAX_COMMENT_LENGTH` while the learner's box and `createComment` trimmed.
+
+## Matching UI matches behaviour and accessibility
+
+When a ticket asks for one element to match another, it matches in what it
+does and what assistive technology reads, as well as in how it looks: the
+same `aria-describedby`, `aria-invalid` and accessible name, the same states.
+Share the component when you can; then they cannot drift.
+
 ## A comment explains why
 
 Name and extract until a comment is unnecessary. A comment earns its place
