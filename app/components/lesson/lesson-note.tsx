@@ -4,6 +4,7 @@ import { NotebookPen } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent } from "~/components/ui/card";
 import { Textarea } from "~/components/ui/textarea";
+import { PanelHeading } from "~/components/panel-heading";
 import { cn, formatRelativeTime } from "~/lib/utils";
 import { measureNote, type NoteMeasure } from "~/modules/lesson-notes";
 
@@ -24,12 +25,9 @@ export function LessonNote({
   return (
     <Card className="mb-8">
       <CardContent className="space-y-3">
-        <div className="flex items-center gap-2">
-          <NotebookPen className="size-4 text-muted-foreground" />
-          <h2 id={headingId} className="font-semibold">
-            Your notes
-          </h2>
-        </div>
+        <PanelHeading icon={NotebookPen} id={headingId}>
+          Your notes
+        </PanelHeading>
 
         <fetcher.Form method="post" className="space-y-3">
           <input type="hidden" name="intent" value="save-note" />

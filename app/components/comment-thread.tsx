@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useFetcher } from "react-router";
 import { toast } from "sonner";
 import { MessageSquare, Pencil, Reply, Trash2 } from "lucide-react";
@@ -7,7 +7,8 @@ import { Card, CardContent } from "~/components/ui/card";
 import { Textarea } from "~/components/ui/textarea";
 import { UserAvatar } from "~/components/user-avatar";
 import { cn, formatRelativeTime } from "~/lib/utils";
-import { MAX_COMMENT_LENGTH } from "~/lib/comments";
+import { PanelHeading } from "~/components/panel-heading";
+import { measureComment } from "~/modules/lesson-discussion";
 
 // Bodies arrive pre-rendered from the server (renderComment), because comments
 // are untrusted markdown and the sanitising renderer is server-only.
@@ -76,8 +77,8 @@ function CommentForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetcher.state, fetcher.data, intent]);
 
-  const tooLong = body.length > MAX_COMMENT_LENGTH;
-  const empty = body.trim().length === 0;
+  const { tooLong, empty, label, max } = measureComment(body);
+  const counterId = useId();
 
   return (
     <fetcher.Form method="post" className="space-y-2">
@@ -98,6 +99,8 @@ function CommentForm({
         // oxlint-disable-next-line jsx-a11y/no-autofocus -- focus moves to the form the person just opened
         autoFocus={autoFocus}
         aria-label={placeholder}
+        aria-describedby={counterId}
+        aria-invalid={tooLong || undefined}
       />
 
       <div className="flex items-center gap-3">
@@ -116,12 +119,15 @@ function CommentForm({
         )}
 
         <span
+          id={counterId}
+          aria-label={`${label} characters`}
+          title={`Comments can be up to ${max.toLocaleString("en")} characters`}
           className={cn(
-            "ml-auto text-xs",
+            "ml-auto text-xs tabular-nums",
             tooLong ? "text-destructive" : "text-muted-foreground"
           )}
         >
-          {body.length} / {MAX_COMMENT_LENGTH}
+          {label}
         </span>
       </div>
 
@@ -366,11 +372,10 @@ export function CommentThread({
 }) {
   return (
     <Card className="mb-8">
-      <CardContent className="p-6">
-        <div className="mb-4 flex items-center gap-2">
-          <MessageSquare className="size-5 text-primary" />
-          <h2 className="text-xl font-semibold">Questions &amp; Discussion</h2>
-        </div>
+      <CardContent className="space-y-3">
+        <PanelHeading icon={MessageSquare}>
+          Questions &amp; Discussion
+        </PanelHeading>
 
         {comments.length === 0 ? (
           <div className="rounded-lg border border-dashed p-6 text-center">
@@ -396,7 +401,7 @@ export function CommentThread({
         )}
 
         {canPost && (
-          <div className="mt-6 border-t pt-6">
+          <div className="border-t pt-3">
             <CommentForm
               intent="create-comment"
               placeholder="Ask a question or share what you found..."

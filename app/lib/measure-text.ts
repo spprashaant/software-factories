@@ -1,6 +1,4 @@
-import { MAX_NOTE_LENGTH } from "~/lib/notes";
-
-export type NoteMeasure = {
+export type TextMeasure = {
   length: number;
   max: number;
   tooLong: boolean;
@@ -11,10 +9,11 @@ export type NoteMeasure = {
 const formatCount = (n: number) => n.toLocaleString("en");
 
 /**
- * Trims before counting because the save action trims before it checks the
- * limit; counting the raw text would warn about whitespace the server drops.
+ * Trims before counting because the save actions for notes and comments trim
+ * before they check the limit; counting the raw text would warn about
+ * whitespace the server drops.
  */
-export function measure(body: string, max = MAX_NOTE_LENGTH): NoteMeasure {
+export function measureText(body: string, max: number): TextMeasure {
   const length = body.trim().length;
   return {
     length,
