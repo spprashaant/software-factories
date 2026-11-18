@@ -13,6 +13,12 @@
  * - It is staged or unstaged in the work tree now.
  * - It is in an untracked file. A new file is yours, so every line counts.
  *
+ * In CI, name the base yourself. A checkout there has no reflog from
+ * `npm run reset`, and the branch's "Created from HEAD" entry points at the
+ * pull request's own head, so the diff would hold none of its lines:
+ *
+ *     npm run test:mutation -- --base origin/main
+ *
  * You can also name the files or directories yourself. That skips the diff
  * and grades every line of them:
  *
@@ -181,9 +187,11 @@ type Target = { file: string; lines: string[] | null };
  * (`@@ -a,b +start,count @@`) gives the new lines. A hunk with a count of 0
  * only deletes lines, so it leaves nothing to mutate.
  */
-function changedTargets(): Target[] {
-  const base = findDiffBase();
-  console.log(`Diffing against ${base ? base.slice(0, 7) : "nothing"}.\n`);
+function changedTargets(base: string | null): Target[] {
+  // A ref such as origin/main prints with its commit; a SHA prints short.
+  const short = base ? git(["rev-parse", "--short", base])[0] : null;
+  const named = base && !base.startsWith(short ?? "") ? ` (${base})` : "";
+  console.log(`Diffing against ${short ?? "nothing"}${named}.\n`);
   const lines = new Map<string, string[]>();
   let file: string | null = null;
   for (const line of git(["diff", "-U0", "--no-color", base ?? "HEAD"])) {
@@ -209,15 +217,48 @@ function changedTargets(): Target[] {
   ].filter(({ file }) => existsSync(resolve(repoRoot, file))); // drop deletions
 }
 
-const args = process.argv.slice(2);
-const fromDiff = args.length === 0;
+/** `--base <ref>` and the paths after it. */
+function parseArgs(argv: string[]): { base: string | null; paths: string[] } {
+  if (argv[0] !== "--base") return { base: null, paths: argv };
+  const ref = argv[1];
+  if (
+    !ref ||
+    git(["rev-parse", "--verify", "--quiet", ref], { optional: true })
+      .length === 0
+  ) {
+    console.error(`--base needs a ref that exists: ${ref ?? "(none)"}`);
+    process.exit(1);
+  }
+  return { base: ref, paths: argv.slice(2) };
+}
+
+/** Why a changed file is not mutated, or null when it is. */
+function skipReason(file: string): string | null {
+  if (/\.test\.tsx?$/.test(file)) return "a test file";
+  if (!isSource(file)) return "not a .ts/.tsx file";
+  if (!isTested(file)) return `outside ${TESTED_ROOTS.join(", ")}`;
+  return null;
+}
+
+const { base, paths } = parseArgs(process.argv.slice(2));
+const fromDiff = paths.length === 0;
 const candidates: Target[] = fromDiff
-  ? changedTargets()
-  : namedFiles(args).map((file) => ({ file, lines: null }));
+  ? changedTargets(base ?? findDiffBase())
+  : namedFiles(paths).map((file) => ({ file, lines: null }));
 
 const targets = candidates
-  .filter(({ file }) => isSource(file) && isTested(file))
+  .filter(({ file }) => skipReason(file) === null)
   .sort((a, b) => a.file.localeCompare(b.file));
+
+// A diff that mutates nothing must say what it saw, so an empty run cannot
+// pass for a clean one.
+if (fromDiff) {
+  for (const { file } of candidates) {
+    const reason = skipReason(file);
+    if (reason) console.log(`Skipping ${file}: ${reason}.`);
+  }
+  if (candidates.length > 0) console.log();
+}
 
 if (targets.length === 0) {
   console.log(

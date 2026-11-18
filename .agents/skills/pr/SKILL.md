@@ -168,3 +168,10 @@ Execution-based evidence is A-tier. Test results, console output. Show the exact
 Describe whether it's a one-way or two-way door. You can walk back through two-way doors, but not one-way doors. A PR that is cheap to roll back is lower risk. Changes that involve destructive actions or hard-to-reverse decisions are one-way doors.
 
 The blast radius is the potential impact or scope of the changes introduced by this PR. Consider all possibilities. Examples are layout shift, breakages for consumers, mobile responsiveness, etc.
+
+Work it out from `git diff --stat <base>...HEAD`, not from the ticket. The one word names the widest surface the diff reaches. Below it, list every surface:
+
+- each changed route, by URL. An `api.*` route is an endpoint with callers outside its page: name it.
+- each module entry point whose signature or behaviour changed, and who calls it.
+
+A refactor that "changes no behaviour" still lists every code path it rewired.

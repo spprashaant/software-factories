@@ -189,6 +189,19 @@ jobs:
           OUTPUT_DIR: ${{ runner.temp }}
         run: npx tsx .sandcastle/agent-workflows/review/review.ts
 
+      - name: Check the review left the guardrails alone
+        # As in agent-implement.yml: the review's fixes change code, never
+        # the checks. The check runs from the PR's head as it was before the
+        # review. No token here: this runs repo code.
+        run: |
+          set -euo pipefail
+          # A base from before the check existed has nothing to run.
+          if ! git cat-file -e "$HEAD_SHA:scripts/check-guardrails.sh" 2>/dev/null; then
+            echo "::warning::The base has no scripts/check-guardrails.sh. Skipping."
+            exit 0
+          fi
+          git show "$HEAD_SHA:scripts/check-guardrails.sh" | sh -s -- "$HEAD_SHA"
+
       - name: Push the review's fixes
         id: push
         env:
